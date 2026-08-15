@@ -1071,7 +1071,7 @@ let setupSide = null;
 let preciseState = {
   types: [],
   isl: { dropTF: null },
-  hns: { dropTF: null }
+  hns: { islTimeframe: null, dropTF: null }
 };
 let zoneSizeState = { size: null };
 
@@ -1098,6 +1098,7 @@ function preciseComplete() {
   if (preciseState.types.length === 0) return false;
   return preciseState.types.every(t => {
     const d = preciseState[t];
+    if (t === 'hns' && !d.islTimeframe) return false;
     if (!d.dropTF) return false;
     return true;
   });
@@ -1107,12 +1108,27 @@ function renderPreciseBlock(title, key, noteText) {
   const data = preciseState[key];
   let h = `<div class="setup-detail-title" style="margin-top:6px;">${title}</div>`;
 
-  const baseTF = selectedSetupKey ? setupState[selectedSetupKey].timeframe : null;
+  let baseTF = selectedSetupKey ? setupState[selectedSetupKey].timeframe : null;
+
+  if (key === 'hns') {
+    // HNS Precise needs its own exact ISL timeframe first — the 2 lower
+    // timeframes are then dropped from THIS, not from the setup's timeframe.
+    h += `<div class="setup-detail-title" style="font-size:14px;margin-top:2px;">Exact ISL Time Frame</div>`;
+    h += `<div class="field-note">Pick the exact timeframe the ISL zone sits on.</div>`;
+    h += `<div class="chip-select">`;
+    TF_OPTIONS.forEach(tf => {
+      const sel = data.islTimeframe === tf ? 'selected' : '';
+      h += `<div class="chip-option ${sel}" data-pgroup="${key}" data-pfield="islTimeframe" data-val="${tf}">${tf}</div>`;
+    });
+    h += `</div>`;
+    baseTF = data.islTimeframe;
+  }
+
   const belowTFs = getTwoTFsBelow(baseTF);
-  h += `<div class="setup-detail-title" style="font-size:14px;margin-top:2px;">Drop Time Frame 2 Times Maximum</div>`;
+  h += `<div class="setup-detail-title" style="font-size:14px;margin-top:14px;">Drop Time Frame 2 Times Maximum</div>`;
   h += `<div class="field-note">${noteText}</div>`;
   if (belowTFs.length === 0) {
-    h += `<div class="placeholder-box">Pick a timeframe on the Setup step first.</div>`;
+    h += `<div class="placeholder-box">${key === 'hns' ? 'Pick the Exact ISL Time Frame above first.' : 'Pick a timeframe on the Setup step first.'}</div>`;
   } else {
     h += `<div class="chip-select">`;
     belowTFs.forEach(tf => {
@@ -1596,7 +1612,7 @@ function renderStep() {
         const val = el.getAttribute('data-zonesize');
         zoneSizeState.size = zoneSizeState.size === val ? null : val;
         if (zoneSizeState.size !== '50+') {
-          preciseState = { types: [], isl: { dropTF: null }, hns: { dropTF: null } };
+          preciseState = { types: [], isl: { dropTF: null }, hns: { islTimeframe: null, dropTF: null } };
         }
         renderStep();
         renderRail();
@@ -1617,6 +1633,9 @@ function renderStep() {
             preciseState[group].zoneSize = preciseState[group].zoneSize === val ? null : val;
           } else {
             preciseState[group][field] = preciseState[group][field] === val ? null : val;
+            if (group === 'hns' && field === 'islTimeframe') {
+              preciseState.hns.dropTF = null;
+            }
           }
         }
         renderStep();
@@ -1727,11 +1746,16 @@ function renderVerdict() {
     if (preciseState.types.length > 0) {
       const badType = preciseState.types.find(t => {
         const d = preciseState[t];
+        if (t === 'hns' && !d.islTimeframe) return true;
         return !d.dropTF;
       });
       if (badType) {
-        const name = badType === 'isl' ? 'ISL' : 'HNS';
-        preciseLabel = `${name}: select the drop timeframe (2 TF below)`;
+        if (badType === 'hns' && !preciseState.hns.islTimeframe) {
+          preciseLabel = "HNS: select the Exact ISL time frame";
+        } else {
+          const name = badType === 'isl' ? 'ISL' : 'HNS';
+          preciseLabel = `${name}: select the drop timeframe (2 TF below)`;
+        }
       }
     }
     failedSteps.unshift({ step: "Precise", label: preciseLabel });
@@ -1839,7 +1863,7 @@ function renderVerdict() {
     preciseState = {
       types: [],
       isl: { dropTF: null },
-      hns: { dropTF: null }
+      hns: { islTimeframe: null, dropTF: null }
     };
     zoneSizeState = { size: null };
     confluenceState = {
@@ -2308,7 +2332,8 @@ function entryDetailHTML(e) {
     ? e.precise.types.map(t => {
         const d = e.precise[t];
         const name = t === 'isl' ? 'ISL' : 'HNS';
-        return `<div class="kv-row"><span>${name} drop TF</span><span>${d.dropTF || '—'}</span></div>`;
+        const islRow = t === 'hns' ? `<div class="kv-row"><span>HNS exact ISL TF</span><span>${d.islTimeframe || '—'}</span></div>` : '';
+        return `${islRow}<div class="kv-row"><span>${name} drop TF</span><span>${d.dropTF || '—'}</span></div>`;
       }).join('')
     : e.zoneSize === '<=40'
       ? `<div class="kv-row"><span>Precise</span><span>Not needed (zone ≤40 pips)</span></div>`
