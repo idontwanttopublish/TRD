@@ -344,6 +344,40 @@
   .risk-alert span { font-size: 13px; line-height: 1.5; color: #E8B34A; font-weight: 500; }
   .risk-alert strong { color: #F3C978; }
 
+  .risk-alert.block-alert { border-color: #4A1E22; background: #201113; }
+  .risk-alert.block-alert i, .risk-alert.block-alert span { color: #F2565C; }
+  .risk-alert.block-alert strong { color: #F98287; }
+
+  .score-panel {
+    border: 1px solid #262B35;
+    background: #14181F;
+    border-radius: 14px;
+    padding: 16px;
+    margin: 16px 0;
+  }
+  .score-panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .score-panel-title { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: #5B6472; }
+  .score-total { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #8A93A3; }
+
+  .score-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 5px 12px;
+    border-radius: 8px;
+    letter-spacing: 0.03em;
+  }
+  .score-badge.risky { background: #201113; color: #F2565C; border: 1px solid #4A1E22; }
+  .score-badge.good { background: #241D0E; color: #E8B34A; border: 1px solid #4A3C18; }
+  .score-badge.aplus { background: #10201A; color: #34C97F; border: 1px solid #1F4A38; }
+
+  .score-row { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; color: #B9C0CC; padding: 5px 0; }
+  .score-row-pts { font-family: 'JetBrains Mono', monospace; color: #8A93A3; }
+  .score-row-pts.earned { color: #34C97F; }
+
+  .check-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #B9C0CC; cursor: pointer; user-select: none; }
+  .check-toggle input { width: 16px; height: 16px; accent-color: #D9832E; cursor: pointer; }
+
   .rail {
     display: flex;
     gap: 6px;
@@ -871,6 +905,8 @@
   .tag.win { background: #10201A; color: #34C97F; border: 1px solid #1F4A38; }
   .tag.loss { background: #201113; color: #F2565C; border: 1px solid #4A1E22; }
   .tag.breakeven { background: #241D0E; color: #E8B34A; border: 1px solid #4A3C18; }
+  .tag.marked { background: #1B1F28; color: #8A93A3; border: 1px solid #3A4150; }
+  .tag.closed { background: #1B1F28; color: #B9C0CC; border: 1px solid #3A4150; }
 
   .entry-chevron { color: #5B6472; font-size: 16px; transition: transform 0.15s ease; flex-shrink: 0; }
   .entry-row.expanded .entry-chevron { transform: rotate(90deg); }
@@ -995,18 +1031,27 @@ function renderOverallBanner() {
   `;
 }
 
-function directionSetupConflict() {
-  const bias = overallBias();
-  if (bias.label === 'Bullish' && setupSide === 'Sell') return true;
-  if (bias.label === 'Bearish' && setupSide === 'Buy') return true;
-  return false;
-}
-
 function directionSetupAligned() {
   const bias = overallBias();
   if (bias.label === 'Bullish' && setupSide === 'Buy') return true;
   if (bias.label === 'Bearish' && setupSide === 'Sell') return true;
   return false;
+}
+
+// True only when all 3 direction signals agree with each other (3/3), regardless of setup side.
+function allDirectionsAligned() {
+  const vals = Object.values(directionState);
+  if (vals.some(v => !v)) return false;
+  return vals[0] === vals[1] && vals[1] === vals[2];
+}
+
+// How many of the 3 direction signals (h4tl, h4bo, h1structure) point the same way as the setup side.
+// Buy wants Bullish, Sell wants Bearish. Returns null if no side picked yet.
+function directionAlignCount(side) {
+  if (!side) return null;
+  const wanted = side === 'Buy' ? 'Bullish' : side === 'Sell' ? 'Bearish' : null;
+  if (!wanted) return null;
+  return Object.values(directionState).filter(v => v === wanted).length;
 }
 
 // Point weights — tune these to change how much each factor is worth.
@@ -1017,6 +1062,54 @@ const GRADE_POINTS = {
   extra: 15,       // each additional quality "Yes" (BPE: Zone used in 2 TF)
   timeframe: 15    // setup timeframe is H1, M30, or M15
 };
+
+// Overall trade score — shown on the verdict page as Risky / Good / A+.
+const TRADE_SCORE_POINTS = {
+  allDirectionsAligned: 1,   // all 3 direction signals agree with each other
+  setupDirectionAligned: 1, // setup side matches the overall bias
+  setupType: { bpe: 2, hns: 1, tl: 1 }, // BPE is worth more than HNS/TL
+  confluence: {
+    tlKiss: 2,    // TL confluence in "kiss" mode (2 trendlines) — best
+    tlSingle: 1,  // TL confluence, single trendline — less than kiss
+    hnsFresh: 2,  // HNS SNR confluence, fresh — best
+    hnsStale: 1   // HNS SNR confluence, not fresh
+  }
+};
+const TRADE_SCORE_MAX = TRADE_SCORE_POINTS.allDirectionsAligned
+  + TRADE_SCORE_POINTS.setupDirectionAligned
+  + TRADE_SCORE_POINTS.setupType.bpe
+  + TRADE_SCORE_POINTS.confluence.tlKiss + TRADE_SCORE_POINTS.confluence.hnsFresh;
+
+function confluencePoints() {
+  let pts = 0;
+  if (confluenceState.types.includes('hns')) {
+    pts += confluenceState.hns.fresh === 'Yes' ? TRADE_SCORE_POINTS.confluence.hnsFresh : TRADE_SCORE_POINTS.confluence.hnsStale;
+  }
+  if (confluenceState.types.includes('tl')) {
+    pts += confluenceState.tlMode === 'kiss' ? TRADE_SCORE_POINTS.confluence.tlKiss : TRADE_SCORE_POINTS.confluence.tlSingle;
+  }
+  return pts;
+}
+
+function tradeScoreBreakdown() {
+  const items = [];
+  items.push({ label: 'All 3 direction signals aligned', pts: allDirectionsAligned() ? TRADE_SCORE_POINTS.allDirectionsAligned : 0, max: TRADE_SCORE_POINTS.allDirectionsAligned });
+  items.push({ label: 'Setup side aligned with direction', pts: directionSetupAligned() ? TRADE_SCORE_POINTS.setupDirectionAligned : 0, max: TRADE_SCORE_POINTS.setupDirectionAligned });
+  const setupMax = selectedSetupKey ? TRADE_SCORE_POINTS.setupType[selectedSetupKey] : 0;
+  items.push({ label: 'Setup type' + (selectedSetupKey ? ' (' + SETUP_TYPES[selectedSetupKey].label + ')' : ''), pts: setupMax, max: TRADE_SCORE_POINTS.setupType.bpe });
+  items.push({ label: 'Confluence quality', pts: confluencePoints(), max: TRADE_SCORE_POINTS.confluence.tlKiss + TRADE_SCORE_POINTS.confluence.hnsFresh });
+  return items;
+}
+
+function tradeScore() {
+  return tradeScoreBreakdown().reduce((sum, i) => sum + i.pts, 0);
+}
+
+function tradeScoreClass(score) {
+  if (score >= 6) return { label: 'A+', cls: 'aplus' };
+  if (score >= 3) return { label: 'Good', cls: 'good' };
+  return { label: 'Risky', cls: 'risky' };
+}
 
 const GOOD_TIMEFRAMES = ["H1", "M30", "M15"];
 
@@ -1284,6 +1377,7 @@ const steps = [
 
 let stepIndex = 0;
 let checks = steps.map(s => s.items ? s.items.map(() => false) : []);
+let pendingSaveStatus = 'marked';
 
 const card = document.getElementById('card');
 const rail = document.getElementById('rail');
@@ -1291,7 +1385,7 @@ const rail = document.getElementById('rail');
 function stepComplete(i) {
   const t = steps[i].type;
   if (t === 'direction') return Object.values(directionState).every(Boolean);
-  if (t === 'setup') return setupComplete();
+  if (t === 'setup') return setupComplete() && !(setupSide && directionAlignCount(setupSide) === 0);
   if (t === 'zonesize') return zoneSizeComplete();
   if (t === 'precise') return preciseComplete();
   if (t === 'confluence') return confluenceComplete();
@@ -1366,9 +1460,13 @@ function renderStep() {
     });
     html += `</div>`;
   } else if (step.type === 'setup') {
-    if (setupSide && directionSetupConflict()) {
-      const bias = overallBias();
-      html += `<div class="risk-alert"><i class="ti ti-alert-triangle" aria-hidden="true"></i><span><strong>Risky:</strong> direction is ${bias.label.toLowerCase()} but setup is ${setupSide.toLowerCase()}. Only scalp this — do not hold.</span></div>`;
+    if (setupSide) {
+      const alignCount = directionAlignCount(setupSide);
+      if (alignCount === 0) {
+        html += `<div class="risk-alert block-alert"><i class="ti ti-ban" aria-hidden="true"></i><span><strong>Blocked:</strong> 0 of 3 direction signals align with ${setupSide.toLowerCase()}. Change direction or setup side to continue.</span></div>`;
+      } else if (alignCount === 1) {
+        html += `<div class="risk-alert"><i class="ti ti-alert-triangle" aria-hidden="true"></i><span><strong>Caution:</strong> only 1 of 3 direction signals align with ${setupSide.toLowerCase()}. Proceed carefully.</span></div>`;
+      }
     }
     if (setupDetailKey) {
       const key = setupDetailKey;
@@ -1758,6 +1856,20 @@ function renderVerdict() {
   const vMeta = nowMeta();
   html += `<div class="verdict-sub" style="margin-top:-14px;font-family:'JetBrains Mono', monospace;font-size:11px;color:#5B6472;">${vMeta.date} · ${vMeta.day} · ${vMeta.time}</div>`;
 
+  const score = tradeScore();
+  const scoreInfo = tradeScoreClass(score);
+  const breakdown = tradeScoreBreakdown();
+  html += `<div class="score-panel">
+    <div class="score-panel-head">
+      <div>
+        <div class="score-panel-title">Trade score</div>
+        <div class="score-total">${score} / ${TRADE_SCORE_MAX} pts</div>
+      </div>
+      <div class="score-badge ${scoreInfo.cls}">${scoreInfo.label}</div>
+    </div>
+    ${breakdown.map(b => `<div class="score-row"><span>${b.label}</span><span class="score-row-pts ${b.pts > 0 ? 'earned' : ''}">${b.pts}/${b.max}</span></div>`).join('')}
+  </div>`;
+
   if (!isGo) {
     html += `<div class="fail-list">`;
     if (biasMixed) {
@@ -1779,15 +1891,14 @@ function renderVerdict() {
   if (isGo) {
     html += `<div class="journal-save-block" id="journalSaveBlock">
       <div class="journal-save-title">Save to journal</div>
-      <div class="form-grid">
-        <input class="form-input" id="jSymbol" placeholder="Symbol / pair">
-        <input class="form-input" id="jRisk" type="number" step="any" placeholder="Risk %">
-        <input class="form-input" id="jEntry" type="number" step="any" placeholder="Entry price">
-        <input class="form-input" id="jSL" type="number" step="any" placeholder="Stop loss">
-        <input class="form-input span-2" id="jTP" type="number" step="any" placeholder="Take profit">
+      <div class="dir-field-label" style="margin-bottom:9px;">Status</div>
+      <div class="chip-select" id="saveStatusChips" style="margin-bottom:16px;">
+        <div class="chip-option ${pendingSaveStatus === 'marked' ? 'selected' : ''}" data-save-status="marked">Marked</div>
+        <div class="chip-option ${pendingSaveStatus === 'open' ? 'selected' : ''}" data-save-status="open">Open</div>
+        <div class="chip-option ${pendingSaveStatus === 'closed' ? 'selected' : ''}" data-save-status="closed">Closed</div>
       </div>
-      <textarea class="form-input" id="jNotes" rows="2" placeholder="Notes (optional)"></textarea>
-      <button class="btn-next go" id="saveJournalBtn" style="width:100%;margin-top:10px;">Save to journal</button>
+      <div class="field-note" style="margin-bottom:10px;">Pair, risk, entry/SL/TP, and confluence can all be filled in later from the journal page.</div>
+      <button class="btn-next go" id="saveJournalBtn" style="width:100%;">Save</button>
     </div>`;
   } else {
     html += `<button class="btn-next reset" id="logSkipBtn" style="width:100%;margin-bottom:10px;">Log as skipped (no entry)</button>`;
@@ -1800,17 +1911,17 @@ function renderVerdict() {
   updateTopPoints();
 
   if (isGo) {
+    document.getElementById('saveStatusChips').querySelectorAll('[data-save-status]').forEach(el => {
+      el.addEventListener('click', () => {
+        pendingSaveStatus = el.getAttribute('data-save-status');
+        document.getElementById('saveStatusChips').querySelectorAll('[data-save-status]').forEach(c => c.classList.remove('selected'));
+        el.classList.add('selected');
+      });
+    });
     document.getElementById('saveJournalBtn').addEventListener('click', () => {
-      const tradeInfo = {
-        symbol: document.getElementById('jSymbol').value.trim(),
-        riskPercent: document.getElementById('jRisk').value ? parseFloat(document.getElementById('jRisk').value) : null,
-        entryPrice: document.getElementById('jEntry').value ? parseFloat(document.getElementById('jEntry').value) : null,
-        stopLoss: document.getElementById('jSL').value ? parseFloat(document.getElementById('jSL').value) : null,
-        takeProfit: document.getElementById('jTP').value ? parseFloat(document.getElementById('jTP').value) : null,
-        notes: document.getElementById('jNotes').value.trim()
-      };
-      const entry = buildJournalEntry('GO', tradeInfo);
+      const entry = buildJournalEntry('GO', pendingSaveStatus);
       addJournalEntry(entry);
+      pendingSaveStatus = 'marked';
       const block = document.getElementById('journalSaveBlock');
       block.innerHTML = `<div class="save-confirm">
         <div class="save-confirm-msg"><i class="ti ti-circle-check" aria-hidden="true"></i> Saved to journal</div>
@@ -1822,7 +1933,7 @@ function renderVerdict() {
     const skipBtn = document.getElementById('logSkipBtn');
     if (skipBtn) {
       skipBtn.addEventListener('click', () => {
-        const entry = buildJournalEntry('NO GO', {});
+        const entry = buildJournalEntry('NO GO', null);
         addJournalEntry(entry);
         skipBtn.outerHTML = `<div class="journal-save-block" style="text-align:center;"><div class="save-confirm-msg" style="justify-content:center;"><i class="ti ti-circle-check" aria-hidden="true"></i> Logged as skipped</div></div>`;
       });
@@ -1854,6 +1965,7 @@ function renderVerdict() {
       tl1: { timeframe: null, type: null },
       tl2: { timeframe: null, type: null }
     };
+    pendingSaveStatus = 'marked';
     renderStep();
     renderRail();
     renderOverallBanner();
@@ -1934,7 +2046,7 @@ function setupFieldSummary(key) {
     .map(f => ({ label: f.label, value: data[f.key] || null }));
 }
 
-function buildJournalEntry(verdictType, tradeInfo) {
+function buildJournalEntry(verdictType, statusValue) {
   const bias = overallBias();
   const meta = nowMeta();
   return {
@@ -1946,6 +2058,7 @@ function buildJournalEntry(verdictType, tradeInfo) {
     time: meta.time,
     hour: meta.hour,
     verdict: verdictType,
+    status: verdictType === 'GO' ? (statusValue || 'marked') : null,
     direction: {
       h4tl: directionState.h4tl,
       h4bo: directionState.h4bo,
@@ -1959,18 +2072,21 @@ function buildJournalEntry(verdictType, tradeInfo) {
     setupFields: setupFieldSummary(selectedSetupKey),
     setupGrade: selectedSetupKey ? setupGrade(selectedSetupKey) : null,
     setupPoints: selectedSetupKey ? setupPoints(selectedSetupKey) : null,
+    tradeScore: tradeScore(),
+    tradeScoreMax: TRADE_SCORE_MAX,
+    tradeScoreLabel: tradeScoreClass(tradeScore()),
     zoneSize: zoneSizeState.size,
     precise: JSON.parse(JSON.stringify(preciseState)),
     confluence: JSON.parse(JSON.stringify(confluenceState)),
     dailyOpenChecks: steps[0].items.map((label, i) => ({ label, done: !!checks[0][i] })),
     timingRiskChecks: steps[steps.length - 1].items.map((label, i) => ({ label, done: !!checks[steps.length - 1][i] })),
     trade: {
-      symbol: (tradeInfo && tradeInfo.symbol) || '',
-      entryPrice: (tradeInfo && tradeInfo.entryPrice) || null,
-      stopLoss: (tradeInfo && tradeInfo.stopLoss) || null,
-      takeProfit: (tradeInfo && tradeInfo.takeProfit) || null,
-      riskPercent: (tradeInfo && tradeInfo.riskPercent) || null,
-      notes: (tradeInfo && tradeInfo.notes) || ''
+      symbol: '',
+      entryPrice: null,
+      stopLoss: null,
+      takeProfit: null,
+      riskPercent: null,
+      notes: ''
     },
     outcome: { status: 'open', exitPrice: null, pnl: null, rMultiple: null, closedAt: null, notes: '' }
   };
@@ -2291,9 +2407,19 @@ function renderCharts(entries, stats) {
 }
 
 function outcomeTag(entry) {
-  const status = entry.outcome ? entry.outcome.status : 'open';
-  const label = { open: 'Open', win: 'Win', loss: 'Loss', breakeven: 'B/E' }[status] || 'Open';
-  return `<span class="tag ${status}">${label}</span>`;
+  const st = entry.status || 'marked';
+  const o = entry.outcome || {};
+  if (st === 'marked') return `<span class="tag marked">Marked</span>`;
+  if (st === 'closed') {
+    if (o.status && o.status !== 'open') {
+      const label = { win: 'Win', loss: 'Loss', breakeven: 'B/E' }[o.status] || 'Closed';
+      return `<span class="tag ${o.status}">${label}</span>`;
+    }
+    return `<span class="tag closed">Closed</span>`;
+  }
+  // open
+  const label = { open: 'Open', win: 'Win', loss: 'Loss', breakeven: 'B/E' }[o.status] || 'Open';
+  return `<span class="tag ${o.status || 'open'}">${label}</span>`;
 }
 
 function entryDetailHTML(e) {
@@ -2319,33 +2445,66 @@ function entryDetailHTML(e) {
       ? `<div class="kv-row"><span>Precise</span><span>Not needed (zone ≤40 pips)</span></div>`
       : `<div class="kv-row"><span>Precise</span><span>None selected</span></div>`;
 
-  let confluenceRows = '';
-  if ((e.confluence.types || []).includes('hns')) {
-    confluenceRows += `<div class="kv-row"><span>HNS SNR timeframe</span><span>${e.confluence.hns.timeframe || '—'}</span></div>
-                        <div class="kv-row"><span>HNS SNR fresh</span><span>${e.confluence.hns.fresh || '—'}</span></div>`;
-  }
-  if ((e.confluence.types || []).includes('tl')) {
-    confluenceRows += `<div class="kv-row"><span>TL mode</span><span>${e.confluence.tlMode || '—'}</span></div>
-                        <div class="kv-row"><span>TL 1</span><span>${e.confluence.tl1.timeframe || '—'} · ${e.confluence.tl1.type || '—'}</span></div>`;
-    if (e.confluence.tlMode === 'kiss') {
-      confluenceRows += `<div class="kv-row"><span>TL 2</span><span>${e.confluence.tl2.timeframe || '—'} · ${e.confluence.tl2.type || '—'}</span></div>`;
-    }
-  }
-  if (!confluenceRows) confluenceRows = `<div class="kv-row"><span>Confluence</span><span>None selected</span></div>`;
-
   const checksHTML = (list) => list.map(c => `<div class="check-mini ${c.done ? 'yes' : 'no'}"><i class="ti ${c.done ? 'ti-check' : 'ti-x'}" aria-hidden="true"></i>${c.label}</div>`).join('');
 
   const o = e.outcome || {};
-  const tradeKV = `
-    <div class="kv-row"><span>Entry price</span><span>${e.trade.entryPrice ?? '—'}</span></div>
-    <div class="kv-row"><span>Stop loss</span><span>${e.trade.stopLoss ?? '—'}</span></div>
-    <div class="kv-row"><span>Take profit</span><span>${e.trade.takeProfit ?? '—'}</span></div>
-    <div class="kv-row"><span>Risk %</span><span>${e.trade.riskPercent ?? '—'}</span></div>
+  const c = e.confluence || { types: [], hns: {}, tl1: {}, tl2: {} };
+  const cTypes = c.types || [];
+  const opt = (val, current) => `<option value="${val}" ${current === val ? 'selected' : ''}>${val}</option>`;
+  const tfOptions = (current) => `<option value="">—</option>` + TF_OPTIONS.map(tf => opt(tf, current)).join('');
+  const tlTypeOptions = (current) => `<option value="">—</option>` + TL_TYPES.map(t => opt(t, current)).join('');
+
+  const confluenceEditHTML = `
+    <div class="editable-confluence" data-details-id="${e.id}">
+      <label class="check-toggle"><input type="checkbox" data-cf-type="hns" ${cTypes.includes('hns') ? 'checked' : ''}> HNS SNR confluence</label>
+      <div class="dir-field" style="margin:10px 0 14px;">
+        <div class="dir-field-label" style="font-size:12px;color:#5B6472;">HNS timeframe</div>
+        <select class="form-input" data-cfield="hns-timeframe">${tfOptions(c.hns && c.hns.timeframe)}</select>
+        <div class="dir-field-label" style="font-size:12px;color:#5B6472;margin-top:8px;">HNS fresh</div>
+        <select class="form-input" data-cfield="hns-fresh">
+          <option value="">—</option>
+          ${opt('Yes', c.hns && c.hns.fresh)}
+          ${opt('No', c.hns && c.hns.fresh)}
+        </select>
+      </div>
+      <label class="check-toggle"><input type="checkbox" data-cf-type="tl" ${cTypes.includes('tl') ? 'checked' : ''}> TL confluence</label>
+      <div class="dir-field" style="margin-top:10px;">
+        <div class="dir-field-label" style="font-size:12px;color:#5B6472;">TL mode</div>
+        <select class="form-input" data-cfield="tlMode">
+          <option value="">—</option>
+          ${opt('single', c.tlMode)}
+          ${opt('kiss', c.tlMode)}
+        </select>
+        <div class="dir-field-label" style="font-size:12px;color:#5B6472;margin-top:8px;">TL 1 — timeframe / type</div>
+        <select class="form-input" data-cfield="tl1-timeframe">${tfOptions(c.tl1 && c.tl1.timeframe)}</select>
+        <select class="form-input" data-cfield="tl1-type" style="margin-top:6px;">${tlTypeOptions(c.tl1 && c.tl1.type)}</select>
+        <div class="dir-field-label" style="font-size:12px;color:#5B6472;margin-top:8px;">TL 2 — timeframe / type (kiss only)</div>
+        <select class="form-input" data-cfield="tl2-timeframe">${tfOptions(c.tl2 && c.tl2.timeframe)}</select>
+        <select class="form-input" data-cfield="tl2-type" style="margin-top:6px;">${tlTypeOptions(c.tl2 && c.tl2.type)}</select>
+      </div>
+    </div>
+  `;
+
+  const tradeEditHTML = `
+    <div class="dir-field-label" style="margin-bottom:9px;">Status</div>
+    <div class="chip-select" style="margin-bottom:16px;">
+      <div class="chip-option ${(e.status || 'marked') === 'marked' ? 'selected' : ''}" data-detail-status="marked">Marked</div>
+      <div class="chip-option ${e.status === 'open' ? 'selected' : ''}" data-detail-status="open">Open</div>
+      <div class="chip-option ${e.status === 'closed' ? 'selected' : ''}" data-detail-status="closed">Closed</div>
+    </div>
+    <div class="form-grid">
+      <input class="form-input" placeholder="Symbol / pair" data-tfield="symbol" value="${e.trade.symbol || ''}">
+      <input class="form-input" type="number" step="any" placeholder="Risk %" data-tfield="riskPercent" value="${e.trade.riskPercent ?? ''}">
+      <input class="form-input" type="number" step="any" placeholder="Entry price" data-tfield="entryPrice" value="${e.trade.entryPrice ?? ''}">
+      <input class="form-input" type="number" step="any" placeholder="Stop loss" data-tfield="stopLoss" value="${e.trade.stopLoss ?? ''}">
+      <input class="form-input span-2" type="number" step="any" placeholder="Take profit" data-tfield="takeProfit" value="${e.trade.takeProfit ?? ''}">
+    </div>
+    <textarea class="form-input" rows="2" placeholder="Notes (optional)" data-tfield="notes">${e.trade.notes || ''}</textarea>
   `;
 
   return `
     <div class="detail-section">
-      <div class="detail-heading">Direction · ${e.setupGrade ? e.setupGrade.label + ' · ' + e.setupPoints + ' pts' : ''}</div>
+      <div class="detail-heading">Direction · ${e.setupGrade ? e.setupGrade.label + ' · ' + e.setupPoints + ' pts' : ''}${e.tradeScoreLabel ? ' · Score ' + (e.tradeScore ?? 0) + '/' + (e.tradeScoreMax ?? '—') + ' (' + e.tradeScoreLabel.label + ')' : ''}</div>
       <div class="kv-grid">${dirRows}</div>
     </div>
     <div class="detail-section">
@@ -2357,18 +2516,18 @@ function entryDetailHTML(e) {
       <div class="kv-grid">${preciseRows}</div>
     </div>
     <div class="detail-section">
-      <div class="detail-heading">Confluence</div>
-      <div class="kv-grid">${confluenceRows}</div>
+      <div class="detail-heading">Trade details <span style="font-weight:400;color:#5B6472;font-size:12px;">(editable)</span></div>
+      ${tradeEditHTML}
+    </div>
+    <div class="detail-section">
+      <div class="detail-heading">Confluence <span style="font-weight:400;color:#5B6472;font-size:12px;">(editable)</span></div>
+      ${confluenceEditHTML}
+      <button class="btn-next go" data-save-details="${e.id}" style="width:100%;margin-top:14px;">Save details</button>
     </div>
     <div class="detail-section">
       <div class="detail-heading">Daily open &amp; timing/risk checks</div>
       ${checksHTML(e.dailyOpenChecks)}
       ${checksHTML(e.timingRiskChecks)}
-    </div>
-    <div class="detail-section">
-      <div class="detail-heading">Trade details</div>
-      <div class="kv-grid">${tradeKV}</div>
-      ${e.trade.notes ? `<div class="note-box" style="margin-top:8px;">${e.trade.notes}</div>` : ''}
     </div>
     <div class="detail-section">
       <div class="detail-heading">Outcome</div>
@@ -2402,6 +2561,7 @@ function entryRowHTML(e) {
             <span class="entry-symbol">${e.trade.symbol || 'Unnamed'}</span>
             <span class="tag ${e.verdict === 'GO' ? 'go' : 'nogo'}">${e.verdict}</span>
             ${e.side ? `<span class="tag ${e.side.toLowerCase()}">${e.side}</span>` : ''}
+            ${e.tradeScoreLabel ? `<span class="score-badge ${e.tradeScoreLabel.cls}" style="padding:2px 8px;font-size:11px;">${e.tradeScoreLabel.label}</span>` : ''}
             ${e.verdict === 'GO' ? outcomeTag(e) : ''}
           </div>
           <div class="entry-meta">${e.date} · ${e.day} · ${e.time} · ${e.setupTypeLabel || 'no setup'}${e.setupGrade ? ' · ' + e.setupGrade.label : ''}</div>
@@ -2453,6 +2613,50 @@ function renderJournalDashboard() {
     el.addEventListener('click', () => {
       const id = el.getAttribute('data-toggle-entry');
       expandedEntryId = expandedEntryId === id ? null : id;
+      renderJournalDashboard();
+    });
+  });
+
+  body.querySelectorAll('[data-detail-status]').forEach(el => {
+    el.addEventListener('click', () => {
+      el.parentElement.querySelectorAll('[data-detail-status]').forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+    });
+  });
+
+  body.querySelectorAll('[data-save-details]').forEach(el => {
+    el.addEventListener('click', () => {
+      const id = el.getAttribute('data-save-details');
+      const container = body.querySelector(`.entry-row[data-entry-id="${id}"]`);
+
+      const statusChip = container.querySelector('[data-detail-status].selected');
+      const status = statusChip ? statusChip.getAttribute('data-detail-status') : 'marked';
+
+      const trade = {};
+      container.querySelectorAll('[data-tfield]').forEach(field => {
+        const key = field.getAttribute('data-tfield');
+        let val = field.value;
+        if (['riskPercent', 'entryPrice', 'stopLoss', 'takeProfit'].includes(key)) {
+          val = val === '' ? null : parseFloat(val);
+        } else {
+          val = val.trim();
+        }
+        trade[key] = val;
+      });
+
+      const cf = container.querySelector('.editable-confluence');
+      const getVal = (sel) => { const f = cf.querySelector(`[data-cfield="${sel}"]`); return f && f.value ? f.value : null; };
+      const types = [];
+      cf.querySelectorAll('[data-cf-type]').forEach(cb => { if (cb.checked) types.push(cb.getAttribute('data-cf-type')); });
+      const confluence = {
+        types,
+        hns: { timeframe: getVal('hns-timeframe'), fresh: getVal('hns-fresh') },
+        tlMode: getVal('tlMode'),
+        tl1: { timeframe: getVal('tl1-timeframe'), type: getVal('tl1-type') },
+        tl2: { timeframe: getVal('tl2-timeframe'), type: getVal('tl2-type') }
+      };
+
+      updateJournalEntry(id, { status, trade, confluence });
       renderJournalDashboard();
     });
   });
