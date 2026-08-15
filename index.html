@@ -1070,9 +1070,10 @@ let setupDetailKey = null;
 let setupSide = null;
 let preciseState = {
   types: [],
-  isl: { zoneSize: null, dropTF: null },
-  hns: { zoneSize: null, dropTF: null }
+  isl: { dropTF: null },
+  hns: { dropTF: null }
 };
+let zoneSizeState = { size: null };
 
 function getTwoTFsBelow(baseTF) {
   if (!baseTF) return [];
@@ -1084,11 +1085,19 @@ function getTwoTFsBelow(baseTF) {
   return result;
 }
 
+function zoneSizeComplete() {
+  return !!zoneSizeState.size;
+}
+
+function preciseNeeded() {
+  return zoneSizeState.size === '50+';
+}
+
 function preciseComplete() {
+  if (!preciseNeeded()) return true;
   if (preciseState.types.length === 0) return false;
   return preciseState.types.every(t => {
     const d = preciseState[t];
-    if (!d.zoneSize) return false;
     if (!d.dropTF) return false;
     return true;
   });
@@ -1097,15 +1106,6 @@ function preciseComplete() {
 function renderPreciseBlock(title, key, noteText) {
   const data = preciseState[key];
   let h = `<div class="setup-detail-title" style="margin-top:6px;">${title}</div>`;
-  h += `<div class="chip-select" style="margin-bottom:14px;">`;
-  [
-    { val: "<=40", label: "40 pips or less" },
-    { val: "50+", label: "50 pips +" }
-  ].forEach(opt => {
-    const sel = data.zoneSize === opt.val ? 'selected' : '';
-    h += `<div class="chip-option ${sel}" data-pgroup="${key}" data-pfield="zoneSize" data-val="${opt.val}">${opt.label}</div>`;
-  });
-  h += `</div>`;
 
   const baseTF = selectedSetupKey ? setupState[selectedSetupKey].timeframe : null;
   const belowTFs = getTwoTFsBelow(baseTF);
@@ -1241,6 +1241,12 @@ const setupStep = {
   type: "setup"
 };
 
+const zoneSizeStep = {
+  title: "Zone size",
+  sub: "How wide is the zone? This decides whether Precise applies.",
+  type: "zonesize"
+};
+
 const preciseStep = {
   title: "Precise",
   sub: "How wide is the zone — decide whether to drop timeframe.",
@@ -1257,6 +1263,7 @@ const steps = [
   dailyOpenStep,
   directionStep,
   setupStep,
+  zoneSizeStep,
   preciseStep,
   confluenceStep,
   {
@@ -1280,6 +1287,7 @@ function stepComplete(i) {
   const t = steps[i].type;
   if (t === 'direction') return Object.values(directionState).every(Boolean);
   if (t === 'setup') return setupComplete();
+  if (t === 'zonesize') return zoneSizeComplete();
   if (t === 'precise') return preciseComplete();
   if (t === 'confluence') return confluenceComplete();
   if (t === 'placeholder') return true;
@@ -1411,6 +1419,25 @@ function renderStep() {
           </div>`;
       });
       html += `</div>`;
+    }
+  } else if (step.type === 'zonesize') {
+    html += `<div class="side-cards">`;
+    [
+      { val: "<=40", label: "40 PIPS OR LESS", icon: "ti-minimize" },
+      { val: "50+", label: "50 PIPS +", icon: "ti-maximize" }
+    ].forEach(opt => {
+      const sel = zoneSizeState.size === opt.val ? 'selected' : '';
+      html += `
+        <div class="side-card ${sel}" data-zonesize="${opt.val}">
+          <i class="ti ${opt.icon}" aria-hidden="true"></i>
+          <span>${opt.label}</span>
+        </div>`;
+    });
+    html += `</div>`;
+    if (zoneSizeState.size === '<=40') {
+      html += `<div class="field-note" style="margin-top:14px;">Zone is 40 pips or less — Precise step isn't needed. Skipping straight to Confluence.</div>`;
+    } else if (zoneSizeState.size === '50+') {
+      html += `<div class="field-note" style="margin-top:14px;">Zone is 50 pips or more — continue to Precise to lock the drop timeframe.</div>`;
     }
   } else if (step.type === 'precise') {
     html += `<div class="dir-field-label" style="margin-bottom:9px;">Precise type</div>`;
@@ -1563,6 +1590,18 @@ function renderStep() {
         });
       });
     }
+  } else if (step.type === 'zonesize') {
+    card.querySelectorAll('[data-zonesize]').forEach(el => {
+      el.addEventListener('click', () => {
+        const val = el.getAttribute('data-zonesize');
+        zoneSizeState.size = zoneSizeState.size === val ? null : val;
+        if (zoneSizeState.size !== '50+') {
+          preciseState = { types: [], isl: { dropTF: null }, hns: { dropTF: null } };
+        }
+        renderStep();
+        renderRail();
+      });
+    });
   } else if (step.type === 'precise') {
     card.querySelectorAll('[data-pgroup]').forEach(el => {
       el.addEventListener('click', () => {
@@ -1620,8 +1659,9 @@ function renderStep() {
   if (nextBtn) {
     nextBtn.addEventListener('click', () => {
       if (!stepComplete(stepIndex)) return;
-      if (stepIndex < steps.length - 1) {
-        stepIndex++;
+      const target = nextStepIndex(stepIndex);
+      if (target < steps.length) {
+        stepIndex = target;
         renderStep();
         renderRail();
       } else {
@@ -1649,11 +1689,23 @@ function renderStep() {
           return;
         }
       }
-      stepIndex--;
+      stepIndex = prevStepIndex(stepIndex);
       renderStep();
       renderRail();
     });
   }
+}
+
+function nextStepIndex(from) {
+  let i = from + 1;
+  if (steps[i] && steps[i].type === 'precise' && !preciseNeeded()) i++;
+  return i;
+}
+
+function prevStepIndex(from) {
+  let i = from - 1;
+  if (steps[i] && steps[i].type === 'precise' && !preciseNeeded()) i--;
+  return i;
 }
 
 function renderVerdict() {
@@ -1667,17 +1719,19 @@ function renderVerdict() {
   if (!setupComplete()) {
     failedSteps.unshift({ step: "Setup", label: selectedSetupKey ? "Finish configuring " + SETUP_TYPES[selectedSetupKey].label : "No setup selected" });
   }
+  if (!zoneSizeComplete()) {
+    failedSteps.unshift({ step: "Zone size", label: "No zone size selected" });
+  }
   if (!preciseComplete()) {
     let preciseLabel = "No precise type selected";
     if (preciseState.types.length > 0) {
       const badType = preciseState.types.find(t => {
         const d = preciseState[t];
-        return !d.zoneSize || !d.dropTF;
+        return !d.dropTF;
       });
       if (badType) {
-        const d = preciseState[badType];
         const name = badType === 'isl' ? 'ISL' : 'HNS';
-        preciseLabel = !d.zoneSize ? `${name}: zone size not selected` : `${name}: select the drop timeframe (2 TF below)`;
+        preciseLabel = `${name}: select the drop timeframe (2 TF below)`;
       }
     }
     failedSteps.unshift({ step: "Precise", label: preciseLabel });
@@ -1784,9 +1838,10 @@ function renderVerdict() {
     setupSide = null;
     preciseState = {
       types: [],
-      isl: { zoneSize: null, dropTF: null },
-      hns: { zoneSize: null, dropTF: null }
+      isl: { dropTF: null },
+      hns: { dropTF: null }
     };
+    zoneSizeState = { size: null };
     confluenceState = {
       types: [],
       hns: { timeframe: null, fresh: null },
@@ -1899,10 +1954,11 @@ function buildJournalEntry(verdictType, tradeInfo) {
     setupFields: setupFieldSummary(selectedSetupKey),
     setupGrade: selectedSetupKey ? setupGrade(selectedSetupKey) : null,
     setupPoints: selectedSetupKey ? setupPoints(selectedSetupKey) : null,
+    zoneSize: zoneSizeState.size,
     precise: JSON.parse(JSON.stringify(preciseState)),
     confluence: JSON.parse(JSON.stringify(confluenceState)),
     dailyOpenChecks: steps[0].items.map((label, i) => ({ label, done: !!checks[0][i] })),
-    timingRiskChecks: steps[5].items.map((label, i) => ({ label, done: !!checks[5][i] })),
+    timingRiskChecks: steps[steps.length - 1].items.map((label, i) => ({ label, done: !!checks[steps.length - 1][i] })),
     trade: {
       symbol: (tradeInfo && tradeInfo.symbol) || '',
       entryPrice: (tradeInfo && tradeInfo.entryPrice) || null,
@@ -2247,14 +2303,16 @@ function entryDetailHTML(e) {
     ? e.setupFields.map(f => `<div class="kv-row"><span>${f.label}</span><span>${f.value || '—'}</span></div>`).join('')
     : `<div class="kv-row"><span>Setup</span><span>Not configured</span></div>`;
 
-  const preciseRows = (e.precise.types || []).length
+  const zoneSizeLabel = e.zoneSize || '—';
+  const preciseRows = (e.zoneSize === '50+' && (e.precise.types || []).length)
     ? e.precise.types.map(t => {
         const d = e.precise[t];
         const name = t === 'isl' ? 'ISL' : 'HNS';
-        return `<div class="kv-row"><span>${name} zone size</span><span>${d.zoneSize || '—'}</span></div>
-                <div class="kv-row"><span>${name} drop TF</span><span>${d.dropTF || '—'}</span></div>`;
+        return `<div class="kv-row"><span>${name} drop TF</span><span>${d.dropTF || '—'}</span></div>`;
       }).join('')
-    : `<div class="kv-row"><span>Precise</span><span>None selected</span></div>`;
+    : e.zoneSize === '<=40'
+      ? `<div class="kv-row"><span>Precise</span><span>Not needed (zone ≤40 pips)</span></div>`
+      : `<div class="kv-row"><span>Precise</span><span>None selected</span></div>`;
 
   let confluenceRows = '';
   if ((e.confluence.types || []).includes('hns')) {
@@ -2290,7 +2348,7 @@ function entryDetailHTML(e) {
       <div class="kv-grid">${setupRows}</div>
     </div>
     <div class="detail-section">
-      <div class="detail-heading">Precise</div>
+      <div class="detail-heading">Zone size — ${zoneSizeLabel}</div>
       <div class="kv-grid">${preciseRows}</div>
     </div>
     <div class="detail-section">
