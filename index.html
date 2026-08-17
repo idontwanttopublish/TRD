@@ -909,12 +909,59 @@
   .tag.nogo { background: #201113; color: #F2565C; border: 1px solid #4A1E22; }
   .tag.buy { background: #10201A; color: #34C97F; border: 1px solid #1F4A38; }
   .tag.sell { background: #201113; color: #F2565C; border: 1px solid #4A1E22; }
-  .tag.open { background: #251A0D; color: #E8A661; border: 1px solid #D9832E; }
+  .tag.open { background: #251A0D; color: #E8A661; border: 1px solid #D9832E; animation: live-pulse-tag 1.8s ease-in-out infinite; }
   .tag.win { background: #10201A; color: #34C97F; border: 1px solid #1F4A38; }
   .tag.loss { background: #201113; color: #F2565C; border: 1px solid #4A1E22; }
   .tag.breakeven { background: #241D0E; color: #E8B34A; border: 1px solid #4A3C18; }
   .tag.marked { background: #1B1F28; color: #8A93A3; border: 1px solid #3A4150; }
   .tag.closed { background: #1B1F28; color: #B9C0CC; border: 1px solid #3A4150; }
+
+  /* Live / open-trade styling */
+  @keyframes live-pulse-dot {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(217,131,46,0.55); }
+    50% { opacity: 0.5; box-shadow: 0 0 0 5px rgba(217,131,46,0); }
+  }
+  @keyframes live-pulse-row {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(217,131,46,0), 0 1px 0 rgba(255,255,255,0.02) inset; border-color: #262B35; }
+    50% { box-shadow: 0 0 14px 1px rgba(217,131,46,0.22), 0 1px 0 rgba(255,255,255,0.02) inset; border-color: #4A3212; }
+  }
+  @keyframes live-pulse-tag {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(217,131,46,0.4); }
+    50% { box-shadow: 0 0 0 4px rgba(217,131,46,0); }
+  }
+
+  .entry-row.is-open { animation: live-pulse-row 2.2s ease-in-out infinite; }
+
+  .live-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #E8A661;
+    animation: live-pulse-dot 1.5s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+
+  .live-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+    padding: 10px 14px;
+    border: 1px solid #4A3212;
+    background: linear-gradient(135deg, rgba(217,131,46,0.14), rgba(217,131,46,0.02));
+    border-radius: 12px;
+  }
+  .live-banner .live-dot { width: 8px; height: 8px; }
+  .live-banner-text {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #E8A661;
+  }
+  .live-banner-sub { font-size: 11px; color: #8A93A3; margin-left: auto; }
 
   .entry-chevron { color: #5B6472; font-size: 16px; transition: transform 0.15s ease; flex-shrink: 0; }
   .entry-row.expanded .entry-chevron { transform: rotate(90deg); }
@@ -2705,7 +2752,16 @@ function entryDetailHTML(e) {
     </div>
   `;
 
+  const liveBannerHTML = (e.status === 'open') ? `
+    <div class="live-banner">
+      <span class="live-dot" aria-hidden="true"></span>
+      <span class="live-banner-text">Live position</span>
+      <span class="live-banner-sub">${e.trade.symbol || 'Unnamed'}${e.side ? ' · ' + e.side : ''}${e.trade.entryPrice !== null && e.trade.entryPrice !== undefined ? ' · Entry ' + e.trade.entryPrice : ''}</span>
+    </div>
+  ` : '';
+
   return `
+    ${liveBannerHTML}
     <div class="detail-section">
       <div class="detail-heading">Direction · ${e.setupGrade ? e.setupGrade.label + ' · ' + e.setupPoints + ' pts' : ''}${e.tradeScoreLabel ? ' · Score ' + (e.tradeScore ?? 0) + '/' + (e.tradeScoreMax ?? '—') + ' (' + e.tradeScoreLabel.label + ')' : ''}</div>
       <div class="kv-grid">${dirRows}</div>
@@ -2746,11 +2802,13 @@ function entryDetailHTML(e) {
 
 function entryRowHTML(e) {
   const expanded = expandedEntryId === e.id;
+  const isLive = e.status === 'open';
   return `
-    <div class="entry-row ${expanded ? 'expanded' : ''}" data-entry-id="${e.id}">
+    <div class="entry-row ${expanded ? 'expanded' : ''} ${isLive ? 'is-open' : ''}" data-entry-id="${e.id}">
       <div class="entry-row-head" data-toggle-entry="${e.id}">
         <div class="entry-row-main">
           <div class="entry-row-top">
+            ${isLive ? `<span class="live-dot" aria-hidden="true"></span>` : ''}
             <span class="entry-symbol">${e.trade.symbol || 'Unnamed'}</span>
             ${e.side ? `<span class="tag ${e.side.toLowerCase()}">${e.side}</span>` : ''}
             ${e.tradeScoreLabel ? `<span class="score-badge ${e.tradeScoreLabel.cls}" style="padding:2px 8px;font-size:11px;">${e.tradeScoreLabel.label}</span>` : ''}
@@ -2812,10 +2870,17 @@ function renderJournalDashboard() {
     return;
   }
 
-  // Orders view
+  // Orders view — Open trades first, then Marked, then Closed (and anything else) last
   renderJournalToolbar();
   updateNavCount();
-  body.innerHTML = `<div class="entry-list">${entries.length ? entries.map(entryRowHTML).join('') : '<div class="empty-journal">No entries match these filters.</div>'}</div>`;
+  const orderStatusRank = (e) => {
+    if (e.status === 'open') return 0;
+    if (e.status === 'marked') return 1;
+    if (e.status === 'closed') return 2;
+    return 3;
+  };
+  const sortedEntries = entries.slice().sort((a, b) => orderStatusRank(a) - orderStatusRank(b));
+  body.innerHTML = `<div class="entry-list">${sortedEntries.length ? sortedEntries.map(entryRowHTML).join('') : '<div class="empty-journal">No entries match these filters.</div>'}</div>`;
 
   body.querySelectorAll('[data-toggle-entry]').forEach(el => {
     el.addEventListener('click', () => {
