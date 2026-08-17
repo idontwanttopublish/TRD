@@ -2748,12 +2748,11 @@ function entryRowHTML(e) {
         <div class="entry-row-main">
           <div class="entry-row-top">
             <span class="entry-symbol">${e.trade.symbol || 'Unnamed'}</span>
-            <span class="tag ${e.verdict === 'GO' ? 'go' : 'nogo'}">${e.verdict}</span>
             ${e.side ? `<span class="tag ${e.side.toLowerCase()}">${e.side}</span>` : ''}
             ${e.tradeScoreLabel ? `<span class="score-badge ${e.tradeScoreLabel.cls}" style="padding:2px 8px;font-size:11px;">${e.tradeScoreLabel.label}</span>` : ''}
             ${e.verdict === 'GO' ? outcomeTag(e) : ''}
           </div>
-          <div class="entry-meta">${e.date} · ${e.day} · ${e.time} · ${e.setupTypeLabel || 'no setup'}${e.setupGrade ? ' · ' + e.setupGrade.label : ''}</div>
+          <div class="entry-meta">${e.date} · ${e.day} · ${e.time} · ${e.setupTypeLabel || 'no setup'}${e.setupGrade ? ' · ' + e.setupGrade.label : ''}${e.trade.entryPrice !== null && e.trade.entryPrice !== undefined ? ' · Entry ' + e.trade.entryPrice : ''}</div>
         </div>
         <i class="ti ti-chevron-right entry-chevron" aria-hidden="true"></i>
       </div>
