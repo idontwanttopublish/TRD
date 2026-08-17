@@ -966,6 +966,59 @@
   .entry-chevron { color: #5B6472; font-size: 16px; transition: transform 0.15s ease; flex-shrink: 0; }
   .entry-row.expanded .entry-chevron { transform: rotate(90deg); }
 
+  .setup-highlight {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 14px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #251A0D, #1A140C);
+    border: 1px solid #D9832E;
+    box-shadow: 0 0 16px rgba(217,131,46,0.25);
+  }
+  .setup-highlight-left { display: flex; flex-direction: column; gap: 3px; }
+  .setup-highlight-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #E8A661;
+  }
+  .setup-highlight-name {
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 19px;
+    font-weight: 700;
+    color: #F3D9B8;
+    letter-spacing: -0.01em;
+  }
+  .setup-highlight-tf {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    flex-shrink: 0;
+  }
+  .setup-highlight-tf-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #E8A661;
+  }
+  .setup-highlight-tf-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px;
+    font-weight: 800;
+    color: #0B0D11;
+    background: #D9832E;
+    padding: 6px 14px;
+    border-radius: 8px;
+    letter-spacing: 0.03em;
+    box-shadow: 0 0 12px rgba(217,131,46,0.5);
+  }
+
   .entry-detail { display: none; padding: 4px 14px 16px; border-top: 1px solid #1B1F28; }
   .entry-row.expanded .entry-detail { display: block; }
 
@@ -2594,9 +2647,13 @@ function entryDetailHTML(e) {
     <div class="kv-row"><span>H1 HH/HL structure</span><span>${e.direction.h1structure || '—'}</span></div>
   `;
 
-  const setupRows = e.setupFields && e.setupFields.length
-    ? e.setupFields.map(f => `<div class="kv-row"><span>${f.label}</span><span>${f.value || '—'}</span></div>`).join('')
-    : `<div class="kv-row"><span>Setup</span><span>Not configured</span></div>`;
+  const tfField = (e.setupFields || []).find(f => /timeframe/i.test(f.label));
+  const remainingSetupFields = (e.setupFields || []).filter(f => f !== tfField);
+  const setupRows = remainingSetupFields.length
+    ? remainingSetupFields.map(f => `<div class="kv-row"><span>${f.label}</span><span>${f.value || '—'}</span></div>`).join('')
+    : (e.setupFields && e.setupFields.length
+        ? `<div class="kv-row"><span>Zone timeframe</span><span>Shown above</span></div>`
+        : `<div class="kv-row"><span>Setup</span><span>Not configured</span></div>`);
 
   const zoneSizeLabel = e.zoneSize || '—';
   const preciseRows = (e.zoneSize === '50+' && (e.precise.types || []).length)
@@ -2763,8 +2820,23 @@ function entryDetailHTML(e) {
     </div>
   ` : '';
 
+  const setupHighlightHTML = (e.setupTypeLabel || tfField) ? `
+    <div class="setup-highlight">
+      <div class="setup-highlight-left">
+        <div class="setup-highlight-label">Setup</div>
+        <div class="setup-highlight-name">${e.setupTypeLabel || 'None'}</div>
+      </div>
+      ${tfField ? `
+      <div class="setup-highlight-tf">
+        <div class="setup-highlight-tf-label">${tfField.label}</div>
+        <div class="setup-highlight-tf-badge">${tfField.value || '—'}</div>
+      </div>` : ''}
+    </div>
+  ` : '';
+
   return `
     ${liveBannerHTML}
+    ${setupHighlightHTML}
     <div class="detail-section">
       <div class="detail-heading">Direction · ${e.setupGrade ? e.setupGrade.label + ' · ' + e.setupPoints + ' pts' : ''}${e.tradeScoreLabel ? ' · Score ' + (e.tradeScore ?? 0) + '/' + (e.tradeScoreMax ?? '—') + ' (' + e.tradeScoreLabel.label + ')' : ''}</div>
       <div class="kv-grid">${dirRows}</div>
