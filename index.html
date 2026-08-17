@@ -1326,9 +1326,7 @@ const SETUP_TYPES = {
     icon: "ti-trending-up",
     fields: [
       { key: "tlType", label: "TL type", options: TL_TYPES, note: TL_TYPE_NOTE },
-      { key: "timeframe", label: "Timeframe", options: TF_OPTIONS },
-      { key: "qmSetup", label: "QM Setup?", options: ["Yes", "No"] },
-      { key: "hsl", label: "HSL?", options: ["Yes", "No"], showIf: d => d.qmSetup === 'Yes', note: HSL_NOTE }
+      { key: "timeframe", label: "Timeframe", options: TF_OPTIONS }
     ]
   }
 };
@@ -1336,7 +1334,7 @@ const SETUP_TYPES = {
 let setupState = {
   bpe: { reference: null, timeframe: null, hslAvailable: null, zoneUsed2TF: null, qmSetup: null },
   hns: { timeframe: null },
-  tl: { tlType: null, timeframe: null, qmSetup: null, hsl: null }
+  tl: { tlType: null, timeframe: null }
 };
 let selectedSetupKey = null;
 let setupDetailKey = null;
@@ -1359,7 +1357,7 @@ function getTwoTFsBelow(baseTF) {
 }
 
 function zoneSizeComplete() {
-  if (selectedSetupKey === 'hns') return true;
+  if (selectedSetupKey === 'hns' || selectedSetupKey === 'tl') return true;
   return !!zoneSizeState.size;
 }
 
@@ -1979,8 +1977,8 @@ function renderStep() {
 }
 
 function skipStepForward(t) {
-  if (t === 'zonesize' && selectedSetupKey === 'hns') return true;
-  if (t === 'precise' && (!preciseNeeded() || selectedSetupKey === 'hns')) return true;
+  if (t === 'zonesize' && (selectedSetupKey === 'hns' || selectedSetupKey === 'tl')) return true;
+  if (t === 'precise' && (!preciseNeeded() || selectedSetupKey === 'hns' || selectedSetupKey === 'tl')) return true;
   return false;
 }
 
@@ -2165,7 +2163,7 @@ function renderVerdict() {
     setupState = {
       bpe: { reference: null, timeframe: null, hslAvailable: null, zoneUsed2TF: null, qmSetup: null },
       hns: { timeframe: null },
-      tl: { tlType: null, timeframe: null, qmSetup: null, hsl: null }
+      tl: { tlType: null, timeframe: null }
     };
     selectedSetupKey = null;
     setupDetailKey = null;
