@@ -715,6 +715,9 @@
 
   .nav-tab.active .nav-count { background: #D9832E; color: #fff; }
 
+  .sub-nav { padding: 3px; }
+  .sub-nav .nav-tab { padding: 8px 10px; font-size: 12.5px; }
+
   /* ---- Journal save block on verdict ---- */
   .journal-save-block {
     text-align: left;
@@ -1005,6 +1008,10 @@
   <div class="journal-view" id="viewJournal" style="display:none;">
     <div class="eyebrow">Trade history</div>
     <h1>Journal &amp; dashboard</h1>
+    <div class="top-nav sub-nav" id="journalSubNav" style="margin-bottom:14px;">
+      <button class="nav-tab active" id="subTabDashboard" data-jview="dashboard"><i class="ti ti-chart-bar" aria-hidden="true"></i> Dashboard</button>
+      <button class="nav-tab" id="subTabOrders" data-jview="orders"><i class="ti ti-list-details" aria-hidden="true"></i> Orders<span class="nav-count" id="ordersNavCount"></span></button>
+    </div>
     <div class="journal-toolbar" id="journalToolbar"></div>
     <div class="journal-body" id="journalBody"></div>
   </div>
@@ -1425,6 +1432,8 @@ let checks = steps.map(s => s.items ? s.items.map(() => false) : []);
 let pendingSaveStatus = 'marked';
 let pendingSavePair = 'XAU/USD';
 let pendingSaveOtherPair = '';
+let pendingSaveEntryPrice = '';
+let pendingSaveSL = '';
 
 const card = document.getElementById('card');
 const rail = document.getElementById('rail');
@@ -1956,7 +1965,11 @@ function renderVerdict() {
         <div class="chip-option ${pendingSavePair === 'Others' ? 'selected' : ''}" data-save-pair="Others">Others</div>
       </div>
       ${pendingSavePair === 'Others' ? `<input class="form-input" id="savePairOtherInput" placeholder="Enter pair name" value="${pendingSaveOtherPair}" style="margin-bottom:16px;">` : ''}
-      <div class="field-note" style="margin-bottom:10px;">Risk, entry/SL/TP, and confluence can all be filled in later from the journal page.</div>
+      <div class="form-grid" style="margin-bottom:10px;">
+        <input class="form-input" type="number" step="any" id="saveEntryPriceInput" placeholder="Entry price" value="${pendingSaveEntryPrice}">
+        <input class="form-input" type="number" step="any" id="saveSLInput" placeholder="SL price" value="${pendingSaveSL}">
+      </div>
+      <div class="field-note" style="margin-bottom:10px;">Take profit, risk %, and confluence can all be filled in later from the journal page.</div>
       <button class="btn-next go" id="saveJournalBtn" style="width:100%;">Save</button>
     </div>`;
   } else {
@@ -1987,19 +2000,29 @@ function renderVerdict() {
     if (pairOtherInput) {
       pairOtherInput.addEventListener('input', e => { pendingSaveOtherPair = e.target.value; });
     }
+    document.getElementById('saveEntryPriceInput').addEventListener('input', e => { pendingSaveEntryPrice = e.target.value; });
+    document.getElementById('saveSLInput').addEventListener('input', e => { pendingSaveSL = e.target.value; });
     document.getElementById('saveJournalBtn').addEventListener('click', () => {
       const pairValue = pendingSavePair === 'Others' ? (pendingSaveOtherPair.trim() || 'Others') : pendingSavePair;
-      const entry = buildJournalEntry('GO', pendingSaveStatus, pairValue);
+      const entry = buildJournalEntry('GO', pendingSaveStatus, pairValue, {
+        entryPrice: pendingSaveEntryPrice === '' ? null : parseFloat(pendingSaveEntryPrice),
+        stopLoss: pendingSaveSL === '' ? null : parseFloat(pendingSaveSL)
+      });
       addJournalEntry(entry);
       pendingSaveStatus = 'marked';
       pendingSavePair = 'XAU/USD';
       pendingSaveOtherPair = '';
+      pendingSaveEntryPrice = '';
+      pendingSaveSL = '';
       const block = document.getElementById('journalSaveBlock');
       block.innerHTML = `<div class="save-confirm">
         <div class="save-confirm-msg"><i class="ti ti-circle-check" aria-hidden="true"></i> Saved to journal</div>
         <a class="link-btn" id="openJournalLink">View journal →</a>
       </div>`;
-      document.getElementById('openJournalLink').addEventListener('click', () => switchView('journal'));
+      document.getElementById('openJournalLink').addEventListener('click', () => {
+        journalSubView = 'orders';
+        switchView('journal');
+      });
     });
   } else {
     const skipBtn = document.getElementById('logSkipBtn');
@@ -2040,6 +2063,8 @@ function renderVerdict() {
     pendingSaveStatus = 'marked';
     pendingSavePair = 'XAU/USD';
     pendingSaveOtherPair = '';
+    pendingSaveEntryPrice = '';
+    pendingSaveSL = '';
     renderStep();
     renderRail();
     renderOverallBanner();
@@ -2120,9 +2145,10 @@ function setupFieldSummary(key) {
     .map(f => ({ label: f.label, value: data[f.key] || null }));
 }
 
-function buildJournalEntry(verdictType, statusValue, symbolValue) {
+function buildJournalEntry(verdictType, statusValue, symbolValue, tradeOverrides) {
   const bias = overallBias();
   const meta = nowMeta();
+  const overrides = tradeOverrides || {};
   return {
     id: makeId(),
     createdAt: meta.createdAt,
@@ -2157,8 +2183,8 @@ function buildJournalEntry(verdictType, statusValue, symbolValue) {
     timingRiskChecks: steps[steps.length - 1].items.map((label, i) => ({ label, done: !!checks[steps.length - 1][i] })),
     trade: {
       symbol: symbolValue || '',
-      entryPrice: null,
-      stopLoss: null,
+      entryPrice: overrides.entryPrice ?? null,
+      stopLoss: overrides.stopLoss ?? null,
       takeProfit: null,
       riskPercent: null,
       notes: ''
@@ -2180,6 +2206,7 @@ function updateNavCount() {
 let journalFilters = { range: 'all', setup: 'all', side: 'all', verdict: 'go' };
 let expandedEntryId = null;
 let journalEditConfluence = {};
+let journalSubView = 'dashboard';
 
 function getJournalEditConfluence(e) {
   if (!journalEditConfluence[e.id]) {
@@ -2735,41 +2762,57 @@ function entryRowHTML(e) {
   `;
 }
 
+function renderJournalSubNav() {
+  document.getElementById('subTabDashboard').classList.toggle('active', journalSubView === 'dashboard');
+  document.getElementById('subTabOrders').classList.toggle('active', journalSubView === 'orders');
+  const countEl = document.getElementById('ordersNavCount');
+  const n = getJournal().length;
+  countEl.textContent = n > 0 ? String(n) : '';
+}
+
 function renderJournalDashboard() {
-  renderJournalToolbar();
-  updateNavCount();
+  renderJournalSubNav();
   const entries = filteredEntries();
   const stats = computeStats(entries);
   const body = document.getElementById('journalBody');
+  const toolbar = document.getElementById('journalToolbar');
 
   if (getJournal().length === 0) {
+    toolbar.innerHTML = '';
     body.innerHTML = `<div class="empty-journal"><i class="ti ti-notebook" aria-hidden="true"></i>No trades logged yet.<br>Complete a checklist and save a GO trade to start building your journal.</div>`;
     return;
   }
 
-  const chartsAvailable = typeof Chart !== 'undefined';
-  let html = statCardsHTML(stats);
-  if (!chartsAvailable) {
-    html += `<div class="empty-journal" style="margin-bottom:18px;"><i class="ti ti-chart-bar" aria-hidden="true"></i>Charts couldn't load. Try refreshing the page.</div>`;
-  } else {
-    html += `
-    <div class="chart-grid">
-      <div class="chart-card full"><div class="chart-title">Equity curve (cumulative P/L)</div><canvas id="chartEquity"></canvas></div>
-      <div class="chart-card"><div class="chart-title">Outcome mix</div><canvas id="chartOutcome"></canvas></div>
-      <div class="chart-card"><div class="chart-title">Win rate by setup type</div><canvas id="chartBySetup"></canvas></div>
-      <div class="chart-card"><div class="chart-title">Win rate by direction bias</div><canvas id="chartByBias"></canvas></div>
-      <div class="chart-card"><div class="chart-title">Trades by day of week</div><canvas id="chartByDay"></canvas></div>
-      <div class="chart-card full"><div class="chart-title">Grade distribution</div><canvas id="chartByGrade"></canvas></div>
-    </div>`;
+  if (journalSubView === 'dashboard') {
+    toolbar.innerHTML = '';
+    const chartsAvailable = typeof Chart !== 'undefined';
+    let html = statCardsHTML(stats);
+    if (!chartsAvailable) {
+      html += `<div class="empty-journal" style="margin-bottom:18px;"><i class="ti ti-chart-bar" aria-hidden="true"></i>Charts couldn't load. Try refreshing the page.</div>`;
+    } else {
+      html += `
+      <div class="chart-grid">
+        <div class="chart-card full"><div class="chart-title">Equity curve (cumulative P/L)</div><canvas id="chartEquity"></canvas></div>
+        <div class="chart-card"><div class="chart-title">Outcome mix</div><canvas id="chartOutcome"></canvas></div>
+        <div class="chart-card"><div class="chart-title">Win rate by setup type</div><canvas id="chartBySetup"></canvas></div>
+        <div class="chart-card"><div class="chart-title">Win rate by direction bias</div><canvas id="chartByBias"></canvas></div>
+        <div class="chart-card"><div class="chart-title">Trades by day of week</div><canvas id="chartByDay"></canvas></div>
+        <div class="chart-card full"><div class="chart-title">Grade distribution</div><canvas id="chartByGrade"></canvas></div>
+      </div>`;
+    }
+    body.innerHTML = html;
+    if (chartsAvailable) {
+      ensureChartDefaults();
+      destroyCharts();
+      renderCharts(entries, stats);
+    }
+    return;
   }
-  html += `<div class="entry-list">${entries.length ? entries.map(entryRowHTML).join('') : '<div class="empty-journal">No entries match these filters.</div>'}</div>`;
-  body.innerHTML = html;
 
-  if (chartsAvailable) {
-    ensureChartDefaults();
-    destroyCharts();
-    renderCharts(entries, stats);
-  }
+  // Orders view
+  renderJournalToolbar();
+  updateNavCount();
+  body.innerHTML = `<div class="entry-list">${entries.length ? entries.map(entryRowHTML).join('') : '<div class="empty-journal">No entries match these filters.</div>'}</div>`;
 
   body.querySelectorAll('[data-toggle-entry]').forEach(el => {
     el.addEventListener('click', () => {
@@ -2864,6 +2907,14 @@ function renderJournalDashboard() {
 
 document.getElementById('tabChecklist').addEventListener('click', () => switchView('checklist'));
 document.getElementById('tabJournal').addEventListener('click', () => switchView('journal'));
+document.getElementById('subTabDashboard').addEventListener('click', () => {
+  journalSubView = 'dashboard';
+  renderJournalDashboard();
+});
+document.getElementById('subTabOrders').addEventListener('click', () => {
+  journalSubView = 'orders';
+  renderJournalDashboard();
+});
 
 function updateClock() {
   const now = new Date();
