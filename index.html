@@ -2303,7 +2303,10 @@ function computeStats(entries) {
   const wins = closed.filter(e => e.outcome.status === 'win');
   const losses = closed.filter(e => e.outcome.status === 'loss');
   const breakeven = closed.filter(e => e.outcome.status === 'breakeven');
-  const open = trades.filter(e => !e.outcome || e.outcome.status === 'open' || e.outcome.status === 'marked');
+  const pending = trades.filter(e => !e.outcome || !['win', 'loss', 'breakeven'].includes(e.outcome.status));
+  const openLive = pending.filter(e => (e.status || 'marked') === 'open');
+  const marked = pending.filter(e => (e.status || 'marked') !== 'open');
+  const open = pending;
   const winRate = (wins.length + losses.length) > 0 ? (wins.length / (wins.length + losses.length)) * 100 : null;
   const pnlEntries = trades.filter(e => e.outcome && typeof e.outcome.pnl === 'number');
   const totalPnl = pnlEntries.reduce((s, e) => s + e.outcome.pnl, 0);
@@ -2321,7 +2324,7 @@ function computeStats(entries) {
     else break;
   }
 
-  return { trades, closed, wins, losses, breakeven, open, winRate, totalPnl, avgR, skipped, streak, streakType, pnlEntries };
+  return { trades, closed, wins, losses, breakeven, open, openLive, marked, winRate, totalPnl, avgR, skipped, streak, streakType, pnlEntries };
 }
 
 function fmtNum(n, digits) {
@@ -2495,10 +2498,10 @@ function renderCharts(entries, stats) {
   chartInstances.outcome = new Chart(document.getElementById('chartOutcome'), {
     type: 'doughnut',
     data: {
-      labels: ['Win', 'Loss', 'Breakeven', 'Open'],
+      labels: ['Win', 'Loss', 'Breakeven', 'Open', 'Marked'],
       datasets: [{
-        data: [stats.wins.length, stats.losses.length, stats.breakeven.length, stats.open.length],
-        backgroundColor: ['#34C97F', '#F2565C', '#E8B34A', '#3A4150'],
+        data: [stats.wins.length, stats.losses.length, stats.breakeven.length, stats.openLive.length, stats.marked.length],
+        backgroundColor: ['#34C97F', '#F2565C', '#E8B34A', '#3A4150', '#8A93A6'],
         borderColor: '#14181F',
         borderWidth: 2
       }]
