@@ -128,16 +128,16 @@
 
   .overall-badge {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 14px;
-    font-weight: 700;
-    padding: 7px 14px;
-    border-radius: 8px;
-    letter-spacing: 0.03em;
+    font-size: 17px;
+    font-weight: 800;
+    padding: 9px 20px;
+    border-radius: 9px;
+    letter-spacing: 0.04em;
   }
 
-  .overall-badge.bullish { background: #10201A; color: #34C97F; border: 1px solid #1F4A38; }
-  .overall-badge.bearish { background: #201113; color: #F2565C; border: 1px solid #4A1E22; }
-  .overall-badge.sideways { background: #241D0E; color: #E8B34A; border: 1px solid #4A3C18; }
+  .overall-badge.bullish { background: #10201A; color: #34C97F; border: 1px solid #34C97F; box-shadow: 0 0 14px rgba(52,201,127,0.35); }
+  .overall-badge.bearish { background: #201113; color: #F2565C; border: 1px solid #F2565C; box-shadow: 0 0 14px rgba(242,86,92,0.35); }
+  .overall-badge.sideways { background: #241D0E; color: #E8B34A; border: 1px solid #E8B34A; box-shadow: 0 0 14px rgba(232,179,74,0.35); }
   .overall-badge.mixed { background: #20252E; color: #8A93A3; border: 1px solid #3A4150; }
   .overall-badge.pending { background: #14181F; color: #4A5261; border: 1px solid #262B35; }
 
@@ -919,7 +919,13 @@
   .entry-detail { display: none; padding: 4px 14px 16px; border-top: 1px solid #1B1F28; }
   .entry-row.expanded .entry-detail { display: block; }
 
-  .detail-section { margin-top: 14px; }
+  .detail-section {
+    margin-top: 12px;
+    background: #14181F;
+    border: 1px solid #262B35;
+    border-radius: 12px;
+    padding: 12px 14px;
+  }
   .detail-section:first-child { margin-top: 14px; }
   .detail-heading {
     font-family: 'JetBrains Mono', monospace;
@@ -928,12 +934,29 @@
     text-transform: uppercase;
     color: #5B6472;
     margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #1B1F28;
   }
 
   .kv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
   .kv-row { display: flex; justify-content: space-between; font-size: 12.5px; padding: 5px 0; border-bottom: 1px solid #1B1F28; gap: 8px; }
   .kv-row span:first-child { color: #838C9C; flex-shrink: 0; }
   .kv-row span:last-child { color: #EEF0F4; font-family: 'JetBrains Mono', monospace; text-align: right; }
+
+  .bias-pill {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 800;
+    padding: 3px 10px;
+    border-radius: 6px;
+    letter-spacing: 0.03em;
+  }
+  .bias-pill.bullish { background: #10201A; color: #34C97F; border: 1px solid #34C97F; }
+  .bias-pill.bearish { background: #201113; color: #F2565C; border: 1px solid #F2565C; }
+  .bias-pill.sideways { background: #241D0E; color: #E8B34A; border: 1px solid #E8B34A; }
+  .bias-pill.mixed { background: #20252E; color: #8A93A3; border: 1px solid #3A4150; }
+  .bias-pill.pending { background: #14181F; color: #4A5261; border: 1px solid #262B35; }
 
   .check-mini { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 4px 0; color: #B9C0CC; }
   .check-mini i { font-size: 13px; }
@@ -1044,7 +1067,6 @@ function renderOverallBanner() {
   document.getElementById('overallBanner').innerHTML = `
     <div class="overall-left">
       <div class="overall-label">Overall direction</div>
-      <div class="overall-sub">${b.sub}</div>
     </div>
     <div class="overall-badge ${b.cls}">${b.label}</div>
   `;
@@ -1133,6 +1155,7 @@ function tradeScoreClass(score) {
 const GOOD_TIMEFRAMES = ["H1", "M30", "M15"];
 
 const TF_OPTIONS = ["M5", "M15", "M30", "H1", "H4", "D1"];
+const TF_OPTIONS_TL = ["M1", "M5", "M15", "M30", "H1", "H4", "D1"];
 const TL_TYPES = [
   "TL 1 — Basic",
   "TL 1 — Divergence",
@@ -1164,9 +1187,7 @@ const SETUP_TYPES = {
     sub: "2-candle break — V or A shape, not an M.",
     icon: "ti-chart-line",
     fields: [
-      { key: "timeframe", label: "Timeframe", options: TF_OPTIONS },
-      { key: "qmSetup", label: "QM Setup?", options: ["Yes", "No"] },
-      { key: "hsl", label: "HSL?", options: ["Yes", "No"], showIf: d => d.qmSetup === 'Yes', note: HSL_NOTE }
+      { key: "timeframe", label: "Timeframe", options: TF_OPTIONS }
     ]
   },
   tl: {
@@ -1184,7 +1205,7 @@ const SETUP_TYPES = {
 
 let setupState = {
   bpe: { reference: null, timeframe: null, hslAvailable: null, zoneUsed2TF: null, qmSetup: null },
-  hns: { timeframe: null, qmSetup: null, hsl: null },
+  hns: { timeframe: null },
   tl: { tlType: null, timeframe: null, qmSetup: null, hsl: null }
 };
 let selectedSetupKey = null;
@@ -1208,6 +1229,7 @@ function getTwoTFsBelow(baseTF) {
 }
 
 function zoneSizeComplete() {
+  if (selectedSetupKey === 'hns') return true;
   return !!zoneSizeState.size;
 }
 
@@ -1280,7 +1302,7 @@ function renderTLBlock(title, key) {
   h += `<div class="dir-field">
     <div class="dir-field-label" style="font-size:12px;color:#5B6472;">Timeframe</div>
     <div class="chip-select">`;
-  TF_OPTIONS.forEach(tf => {
+  TF_OPTIONS_TL.forEach(tf => {
     const sel = data.timeframe === tf ? 'selected' : '';
     h += `<div class="chip-option ${sel}" data-group="${key}" data-cfield="timeframe" data-val="${tf}">${tf}</div>`;
   });
@@ -1824,15 +1846,21 @@ function renderStep() {
   }
 }
 
+function skipStepForward(t) {
+  if (t === 'zonesize' && selectedSetupKey === 'hns') return true;
+  if (t === 'precise' && (!preciseNeeded() || selectedSetupKey === 'hns')) return true;
+  return false;
+}
+
 function nextStepIndex(from) {
   let i = from + 1;
-  if (steps[i] && steps[i].type === 'precise' && !preciseNeeded()) i++;
+  while (steps[i] && skipStepForward(steps[i].type)) i++;
   return i;
 }
 
 function prevStepIndex(from) {
   let i = from - 1;
-  if (steps[i] && steps[i].type === 'precise' && !preciseNeeded()) i--;
+  while (steps[i] && skipStepForward(steps[i].type)) i--;
   return i;
 }
 
@@ -1990,7 +2018,7 @@ function renderVerdict() {
     directionState = { h4tl: null, h4bo: null, h1structure: null };
     setupState = {
       bpe: { reference: null, timeframe: null, hslAvailable: null, zoneUsed2TF: null, qmSetup: null },
-      hns: { timeframe: null, qmSetup: null, hsl: null },
+      hns: { timeframe: null },
       tl: { tlType: null, timeframe: null, qmSetup: null, hsl: null }
     };
     selectedSetupKey = null;
@@ -2110,7 +2138,8 @@ function buildJournalEntry(verdictType, statusValue, symbolValue) {
       h4bo: directionState.h4bo,
       h1structure: directionState.h1structure,
       biasLabel: bias.label,
-      biasSub: bias.sub
+      biasSub: bias.sub,
+      biasCls: bias.cls
     },
     side: setupSide || null,
     setupType: selectedSetupKey || null,
@@ -2482,10 +2511,10 @@ function outcomeTag(entry) {
 
 function entryDetailHTML(e) {
   const dirRows = `
+    <div class="kv-row"><span>Overall bias</span><span><span class="bias-pill ${(e.direction.biasCls || 'pending')}">${e.direction.biasLabel}</span></span></div>
     <div class="kv-row"><span>H4 TL direction</span><span>${e.direction.h4tl || '—'}</span></div>
     <div class="kv-row"><span>H4 2BO direction</span><span>${e.direction.h4bo || '—'}</span></div>
     <div class="kv-row"><span>H1 HH/HL structure</span><span>${e.direction.h1structure || '—'}</span></div>
-    <div class="kv-row"><span>Overall bias</span><span>${e.direction.biasLabel} (${e.direction.biasSub})</span></div>
   `;
 
   const setupRows = e.setupFields && e.setupFields.length
@@ -2569,7 +2598,7 @@ function entryDetailHTML(e) {
         const data = cs[key];
         let th = `<div class="dir-field-label" style="margin-top:14px;">${title}</div>`;
         th += `<div class="dir-field"><div class="dir-field-label" style="font-size:12px;color:#5B6472;">Timeframe</div><div class="chip-select">`;
-        TF_OPTIONS.forEach(tf => {
+        TF_OPTIONS_TL.forEach(tf => {
           const sel = data.timeframe === tf ? 'selected' : '';
           th += `<div class="chip-option ${sel}" data-cf-group="${key}" data-cf-field="timeframe" data-cf-val="${tf}">${tf}</div>`;
         });
@@ -2598,7 +2627,6 @@ function entryDetailHTML(e) {
     <div class="kv-grid">
       <div class="kv-row"><span>Status</span><span>Closed</span></div>
       <div class="kv-row"><span>Symbol</span><span>${e.trade.symbol || '—'}</span></div>
-      <div class="kv-row"><span>Risk %</span><span>${e.trade.riskPercent ?? '—'}</span></div>
       <div class="kv-row"><span>Entry price</span><span>${e.trade.entryPrice ?? '—'}</span></div>
       <div class="kv-row"><span>Stop loss</span><span>${e.trade.stopLoss ?? '—'}</span></div>
       <div class="kv-row"><span>Take profit</span><span>${e.trade.takeProfit ?? '—'}</span></div>
@@ -2607,18 +2635,11 @@ function entryDetailHTML(e) {
   ` : `
     <div class="form-grid">
       <input class="form-input" placeholder="Symbol / pair" data-tfield="symbol" value="${e.trade.symbol || ''}">
-      <input class="form-input" type="number" step="any" placeholder="Risk %" data-tfield="riskPercent" value="${e.trade.riskPercent ?? ''}">
       <input class="form-input" type="number" step="any" placeholder="Entry price" data-tfield="entryPrice" value="${e.trade.entryPrice ?? ''}">
       <input class="form-input" type="number" step="any" placeholder="Stop loss" data-tfield="stopLoss" value="${e.trade.stopLoss ?? ''}">
       <input class="form-input span-2" type="number" step="any" placeholder="Take profit" data-tfield="takeProfit" value="${e.trade.takeProfit ?? ''}">
     </div>
     <textarea class="form-input" rows="2" placeholder="Notes (optional)" data-tfield="notes">${e.trade.notes || ''}</textarea>
-    <div class="dir-field-label" style="margin:14px 0 9px;">Status</div>
-    <div class="chip-select">
-      <div class="chip-option status-marked ${(e.status || 'marked') === 'marked' ? 'selected' : ''}" data-detail-status="marked">Marked</div>
-      <div class="chip-option status-open ${e.status === 'open' ? 'selected' : ''}" data-detail-status="open">Open</div>
-      <div class="chip-option status-closed ${e.status === 'closed' ? 'selected' : ''}" data-detail-status="closed">Closed</div>
-    </div>
   `;
 
   const outcomeHTML = locked ? `
@@ -2626,7 +2647,6 @@ function entryDetailHTML(e) {
       <div class="kv-row"><span>Result</span><span>${o.status || '—'}</span></div>
       <div class="kv-row"><span>Exit price</span><span>${o.exitPrice ?? '—'}</span></div>
       <div class="kv-row"><span>P/L amount</span><span>${o.pnl ?? '—'}</span></div>
-      <div class="kv-row"><span>R multiple</span><span>${o.rMultiple ?? '—'}</span></div>
     </div>
     ${o.notes ? `<div class="field-note" style="margin-top:8px;">${o.notes}</div>` : ''}
   ` : `
@@ -2638,9 +2658,19 @@ function entryDetailHTML(e) {
         <option value="breakeven" ${o.status === 'breakeven' ? 'selected' : ''}>Breakeven</option>
       </select>
       <input class="form-input" type="number" step="any" placeholder="Exit price" data-outcome-field="exitPrice" data-id="${e.id}" value="${o.exitPrice ?? ''}">
-      <input class="form-input" type="number" step="any" placeholder="P/L amount" data-outcome-field="pnl" data-id="${e.id}" value="${o.pnl ?? ''}">
-      <input class="form-input" type="number" step="any" placeholder="R multiple" data-outcome-field="rMultiple" data-id="${e.id}" value="${o.rMultiple ?? ''}">
+      <input class="form-input span-2" type="number" step="any" placeholder="P/L amount" data-outcome-field="pnl" data-id="${e.id}" value="${o.pnl ?? ''}">
       <textarea class="form-input span-2" rows="2" placeholder="Outcome notes" data-outcome-field="notes" data-id="${e.id}">${o.notes || ''}</textarea>
+    </div>
+  `;
+
+  const statusHTML = locked ? '' : `
+    <div class="detail-section">
+      <div class="detail-heading">Status</div>
+      <div class="chip-select">
+        <div class="chip-option status-marked ${(e.status || 'marked') === 'marked' ? 'selected' : ''}" data-detail-status="marked">Marked</div>
+        <div class="chip-option status-open ${e.status === 'open' ? 'selected' : ''}" data-detail-status="open">Open</div>
+        <div class="chip-option status-closed ${e.status === 'closed' ? 'selected' : ''}" data-detail-status="closed">Closed</div>
+      </div>
     </div>
   `;
 
@@ -2665,7 +2695,6 @@ function entryDetailHTML(e) {
     <div class="detail-section">
       <div class="detail-heading">Confluence ${locked ? '' : '<span style="font-weight:400;color:#5B6472;font-size:12px;">(editable)</span>'}</div>
       ${confluenceEditHTML}
-      ${locked ? '' : `<button class="btn-next go" data-save-details="${e.id}" style="width:100%;margin-top:14px;">Save details</button>`}
     </div>
     <div class="detail-section">
       <div class="detail-heading">Daily open &amp; timing/risk checks</div>
@@ -2675,10 +2704,11 @@ function entryDetailHTML(e) {
     <div class="detail-section">
       <div class="detail-heading">Outcome</div>
       ${outcomeHTML}
-      <div class="entry-actions">
-        ${locked ? '' : `<button class="btn-next go" data-save-outcome="${e.id}" style="flex:2;">Save outcome</button>`}
-        <button class="btn-next reset" data-delete-entry="${e.id}" style="color:#F2565C;border-color:#4A1E22;">Delete</button>
-      </div>
+    </div>
+    ${statusHTML}
+    <div class="entry-actions">
+      ${locked ? '' : `<button class="btn-next go" data-save-entry="${e.id}" style="flex:2;">Save</button>`}
+      <button class="btn-next reset" data-delete-entry="${e.id}" style="color:#F2565C;border-color:#4A1E22;">Delete</button>
     </div>
   `;
 }
@@ -2780,9 +2810,9 @@ function renderJournalDashboard() {
     });
   });
 
-  body.querySelectorAll('[data-save-details]').forEach(el => {
+  body.querySelectorAll('[data-save-entry]').forEach(el => {
     el.addEventListener('click', () => {
-      const id = el.getAttribute('data-save-details');
+      const id = el.getAttribute('data-save-entry');
       const container = body.querySelector(`.entry-row[data-entry-id="${id}"]`);
 
       const statusChip = container.querySelector('[data-detail-status].selected');
@@ -2792,7 +2822,7 @@ function renderJournalDashboard() {
       container.querySelectorAll('[data-tfield]').forEach(field => {
         const key = field.getAttribute('data-tfield');
         let val = field.value;
-        if (['riskPercent', 'entryPrice', 'stopLoss', 'takeProfit'].includes(key)) {
+        if (['entryPrice', 'stopLoss', 'takeProfit'].includes(key)) {
           val = val === '' ? null : parseFloat(val);
         } else {
           val = val.trim();
@@ -2803,27 +2833,19 @@ function renderJournalDashboard() {
       const cs = journalEditConfluence[id];
       const confluence = cs ? JSON.parse(JSON.stringify(cs)) : { types: [], hns: {}, tlMode: null, tl1: {}, tl2: {} };
 
-      updateJournalEntry(id, { status, trade, confluence });
-      delete journalEditConfluence[id];
-      renderJournalDashboard();
-    });
-  });
-
-  body.querySelectorAll('[data-save-outcome]').forEach(el => {
-    el.addEventListener('click', () => {
-      const id = el.getAttribute('data-save-outcome');
-      const container = body.querySelector(`.entry-row[data-entry-id="${id}"]`);
-      const patch = { outcome: {} };
+      const outcome = {};
       container.querySelectorAll('[data-outcome-field]').forEach(field => {
         const key = field.getAttribute('data-outcome-field');
         let val = field.value;
-        if (['exitPrice', 'pnl', 'rMultiple'].includes(key)) {
+        if (key === 'exitPrice' || key === 'pnl') {
           val = val === '' ? null : parseFloat(val);
         }
-        patch.outcome[key] = val;
+        outcome[key] = val;
       });
-      if (patch.outcome.status !== 'open') patch.outcome.closedAt = new Date().toISOString();
-      updateJournalEntry(id, patch);
+      if (outcome.status !== 'open') outcome.closedAt = new Date().toISOString();
+
+      updateJournalEntry(id, { status, trade, confluence, outcome });
+      delete journalEditConfluence[id];
       renderJournalDashboard();
     });
   });
