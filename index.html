@@ -1957,8 +1957,8 @@ function renderVerdict() {
       <div class="chip-select" id="saveStatusChips" style="margin-bottom:16px;">
         <div class="chip-option ${pendingSaveStatus === 'marked' ? 'selected' : ''}" data-save-status="marked">Marked</div>
         <div class="chip-option ${pendingSaveStatus === 'open' ? 'selected' : ''}" data-save-status="open">Open</div>
-        <div class="chip-option ${pendingSaveStatus === 'closed' ? 'selected' : ''}" data-save-status="closed">Closed</div>
       </div>
+      <div class="field-note" style="margin-bottom:10px;">You can mark a trade Closed from the Journal once you pick Win, Loss, or Breakeven.</div>
       <div class="dir-field-label" style="margin-bottom:9px;">Pair</div>
       <div class="chip-select" id="savePairChips" style="margin-bottom:${pendingSavePair === 'Others' ? '10px' : '16px'};">
         <div class="chip-option ${pendingSavePair === 'XAU/USD' ? 'selected' : ''}" data-save-pair="XAU/USD">XAU/USD</div>
@@ -2189,7 +2189,7 @@ function buildJournalEntry(verdictType, statusValue, symbolValue, tradeOverrides
       riskPercent: null,
       notes: ''
     },
-    outcome: { status: 'open', exitPrice: null, pnl: null, rMultiple: null, closedAt: null, notes: '' }
+    outcome: { status: (statusValue === 'open' ? 'open' : 'marked'), exitPrice: null, pnl: null, rMultiple: null, closedAt: null, notes: '' }
   };
 }
 
@@ -2256,7 +2256,7 @@ function computeStats(entries) {
   const wins = closed.filter(e => e.outcome.status === 'win');
   const losses = closed.filter(e => e.outcome.status === 'loss');
   const breakeven = closed.filter(e => e.outcome.status === 'breakeven');
-  const open = trades.filter(e => !e.outcome || e.outcome.status === 'open');
+  const open = trades.filter(e => !e.outcome || e.outcome.status === 'open' || e.outcome.status === 'marked');
   const winRate = (wins.length + losses.length) > 0 ? (wins.length / (wins.length + losses.length)) * 100 : null;
   const pnlEntries = trades.filter(e => e.outcome && typeof e.outcome.pnl === 'number');
   const totalPnl = pnlEntries.reduce((s, e) => s + e.outcome.pnl, 0);
@@ -2679,7 +2679,10 @@ function entryDetailHTML(e) {
   ` : `
     <div class="outcome-form">
       <select class="form-input" data-outcome-field="status" data-id="${e.id}">
-        <option value="open" ${o.status === 'open' ? 'selected' : ''}>Open</option>
+        ${e.status === 'closed'
+          ? `<option value="" ${!['win', 'loss', 'breakeven'].includes(o.status) ? 'selected' : ''} disabled>Select result…</option>`
+          : `<option value="${e.status || 'marked'}" ${!['win', 'loss', 'breakeven'].includes(o.status) ? 'selected' : ''}>${e.status === 'open' ? 'Open' : 'Marked'}</option>`
+        }
         <option value="win" ${o.status === 'win' ? 'selected' : ''}>Win</option>
         <option value="loss" ${o.status === 'loss' ? 'selected' : ''}>Loss</option>
         <option value="breakeven" ${o.status === 'breakeven' ? 'selected' : ''}>Breakeven</option>
@@ -2687,6 +2690,7 @@ function entryDetailHTML(e) {
       <input class="form-input" type="number" step="any" placeholder="Exit price" data-outcome-field="exitPrice" data-id="${e.id}" value="${o.exitPrice ?? ''}">
       <input class="form-input span-2" type="number" step="any" placeholder="P/L amount" data-outcome-field="pnl" data-id="${e.id}" value="${o.pnl ?? ''}">
       <textarea class="form-input span-2" rows="2" placeholder="Outcome notes" data-outcome-field="notes" data-id="${e.id}">${o.notes || ''}</textarea>
+      ${e.status === 'closed' ? `<div class="field-note" style="margin-top:2px;">Pick Win, Loss, or Breakeven before saving a closed trade.</div>` : ''}
     </div>
   `;
 
@@ -2884,7 +2888,20 @@ function renderJournalDashboard() {
         }
         outcome[key] = val;
       });
-      if (outcome.status !== 'open') outcome.closedAt = new Date().toISOString();
+
+      if (status === 'closed') {
+        if (!['win', 'loss', 'breakeven'].includes(outcome.status)) {
+          alert('Pick Win, Loss, or Breakeven in Outcome before saving this trade as Closed.');
+          return;
+        }
+      } else {
+        // Marked / Open trades track the trade status directly, unless a result was already recorded.
+        if (!['win', 'loss', 'breakeven'].includes(outcome.status)) {
+          outcome.status = status;
+        }
+      }
+      if (['win', 'loss', 'breakeven'].includes(outcome.status)) outcome.closedAt = new Date().toISOString();
+      else outcome.closedAt = null;
 
       updateJournalEntry(id, { status, trade, confluence, outcome });
       delete journalEditConfluence[id];
