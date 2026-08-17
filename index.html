@@ -932,6 +932,29 @@
 
   .entry-row.is-open { animation: live-pulse-row 2.2s ease-in-out infinite; }
 
+  .quick-open-btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid #D9832E;
+    background: #251A0D;
+    color: #E8A661;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.15s ease;
+  }
+
+  .quick-open-btn i { font-size: 13px; }
+  .quick-open-btn:hover { background: #2E200F; box-shadow: 0 0 10px rgba(217,131,46,0.3); }
+  .quick-open-btn:active { transform: scale(0.96); }
+
   .live-dot {
     display: inline-block;
     width: 7px;
@@ -2211,6 +2234,16 @@ function updateJournalEntry(id, patch) {
   }
 }
 
+function quickOpenEntry(id) {
+  const arr = getJournal();
+  const entry = arr.find(e => e.id === id);
+  if (!entry) return;
+  const outcome = Object.assign({}, entry.outcome);
+  if (!['win', 'loss', 'breakeven'].includes(outcome.status)) outcome.status = 'open';
+  outcome.closedAt = null;
+  updateJournalEntry(id, { status: 'open', outcome });
+}
+
 function deleteJournalEntry(id) {
   const arr = getJournal().filter(e => e.id !== id);
   setJournalArr(arr);
@@ -2878,6 +2911,7 @@ function entryDetailHTML(e) {
 function entryRowHTML(e) {
   const expanded = expandedEntryId === e.id;
   const isLive = e.status === 'open';
+  const canQuickOpen = e.status === 'marked';
   return `
     <div class="entry-row ${expanded ? 'expanded' : ''} ${isLive ? 'is-open' : ''}" data-entry-id="${e.id}">
       <div class="entry-row-head" data-toggle-entry="${e.id}">
@@ -2891,6 +2925,7 @@ function entryRowHTML(e) {
           </div>
           <div class="entry-meta">${e.date} · ${e.day} · ${e.time} · ${e.setupTypeLabel || 'no setup'}${e.setupGrade ? ' · ' + e.setupGrade.label : ''}${e.trade.entryPrice !== null && e.trade.entryPrice !== undefined ? ' · Entry ' + e.trade.entryPrice : ''}</div>
         </div>
+        ${canQuickOpen ? `<button type="button" class="quick-open-btn" data-quick-open="${e.id}" title="Mark as Open"><i class="ti ti-player-play" aria-hidden="true"></i>Open</button>` : ''}
         <i class="ti ti-chevron-right entry-chevron" aria-hidden="true"></i>
       </div>
       <div class="entry-detail">${expanded ? entryDetailHTML(e) : ''}</div>
@@ -2963,6 +2998,17 @@ function renderJournalDashboard() {
       if (expandedEntryId !== id) delete journalEditConfluence[id];
       expandedEntryId = expandedEntryId === id ? null : id;
       renderJournalDashboard();
+    });
+  });
+
+  body.querySelectorAll('[data-quick-open]').forEach(el => {
+    el.addEventListener('click', (evt) => {
+      evt.stopPropagation();
+      const id = el.getAttribute('data-quick-open');
+      if (confirm('Mark this trade as Open?')) {
+        quickOpenEntry(id);
+        renderJournalDashboard();
+      }
     });
   });
 
