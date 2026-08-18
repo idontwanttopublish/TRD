@@ -494,6 +494,16 @@
     margin-right: 5px;
   }
 
+  .entry-loss-summary {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #F2565C;
+    margin-top: 6px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+
   .step-title {
     font-family: 'Space Grotesk', 'Inter', sans-serif;
     font-size: 19px;
@@ -3066,6 +3076,18 @@ function entryDetailHTML(e) {
   `;
 }
 
+function lossMatchHTML(e) {
+  const o = e.outcome || {};
+  const rows = [];
+  if (e.trade.entryPrice !== null && e.trade.entryPrice !== undefined) rows.push(`<span>Entry ${e.trade.entryPrice}</span>`);
+  if (o.exitPrice !== null && o.exitPrice !== undefined) rows.push(`<span>Exit ${o.exitPrice}</span>`);
+  if (typeof o.pnl === 'number') rows.push(`<span>P/L ${o.pnl}</span>`);
+  if (typeof o.rMultiple === 'number') rows.push(`<span>${o.rMultiple}R</span>`);
+  const summary = rows.length ? `<div class="entry-loss-summary">${rows.join(' · ')}</div>` : '';
+  const note = o.notes ? `<div class="entry-loss-note"><i class="ti ti-alert-triangle" aria-hidden="true"></i>${o.notes}</div>` : '';
+  return summary + note;
+}
+
 function entryRowHTML(e) {
   const expanded = expandedEntryId === e.id;
   const isLive = e.status === 'open';
@@ -3082,7 +3104,7 @@ function entryRowHTML(e) {
             ${e.verdict === 'GO' ? outcomeTag(e) : ''}
           </div>
           <div class="entry-meta">${e.date} · ${e.day} · ${e.time} · ${e.setupTypeLabel || 'no setup'}${e.setupGrade ? ' · ' + e.setupGrade.label : ''}${e.trade.entryPrice !== null && e.trade.entryPrice !== undefined ? ' · Entry ' + e.trade.entryPrice : ''}</div>
-          ${journalFilters.outcome === 'loss' && e.outcome && e.outcome.status === 'loss' && e.outcome.notes ? `<div class="entry-loss-note"><i class="ti ti-alert-triangle" aria-hidden="true"></i>${e.outcome.notes}</div>` : ''}
+          ${journalFilters.outcome === 'loss' && e.outcome && e.outcome.status === 'loss' ? lossMatchHTML(e) : ''}
         </div>
         ${canQuickOpen ? `<button type="button" class="quick-open-btn" data-quick-open="${e.id}" title="Mark as Open"><i class="ti ti-player-play" aria-hidden="true"></i>Open</button>` : ''}
         <i class="ti ti-chevron-right entry-chevron" aria-hidden="true"></i>
