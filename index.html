@@ -2458,7 +2458,7 @@ function updateNavCount() {
 /* =====================================================
    JOURNAL DASHBOARD — filters, stats, charts, entry list
    ===================================================== */
-let journalFilters = { range: 'all', setup: 'all', side: 'all', verdict: 'go', outcome: 'all' };
+let journalFilters = { range: 'all', setup: 'all', side: 'all', outcome: 'all' };
 let expandedEntryId = null;
 let journalEditConfluence = {};
 let journalSubView = 'dashboard';
@@ -2490,6 +2490,11 @@ function switchView(view) {
 
 function rangeCutoff(range) {
   if (range === 'all') return 0;
+  if (range === 'today') {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }
   const days = { '7': 7, '30': 30, '90': 90 }[range] || 0;
   return Date.now() - days * 24 * 60 * 60 * 1000;
 }
@@ -2500,7 +2505,6 @@ function filteredEntries() {
     if (e.timestamp < cutoff) return false;
     if (journalFilters.setup !== 'all' && e.setupType !== journalFilters.setup) return false;
     if (journalFilters.side !== 'all' && e.side !== journalFilters.side) return false;
-    if (journalFilters.verdict !== 'all' && e.verdict !== (journalFilters.verdict === 'go' ? 'GO' : 'NO GO')) return false;
     if (journalFilters.outcome !== 'all' && (!e.outcome || e.outcome.status !== journalFilters.outcome)) return false;
     return true;
   });
@@ -2546,6 +2550,7 @@ function renderJournalToolbar() {
   el.innerHTML = `
     <select class="jt-select" id="fRange">
       <option value="all" ${journalFilters.range === 'all' ? 'selected' : ''}>All time</option>
+      <option value="today" ${journalFilters.range === 'today' ? 'selected' : ''}>Today</option>
       <option value="7" ${journalFilters.range === '7' ? 'selected' : ''}>Last 7 days</option>
       <option value="30" ${journalFilters.range === '30' ? 'selected' : ''}>Last 30 days</option>
       <option value="90" ${journalFilters.range === '90' ? 'selected' : ''}>Last 90 days</option>
@@ -2560,11 +2565,6 @@ function renderJournalToolbar() {
       <option value="all" ${journalFilters.side === 'all' ? 'selected' : ''}>Buy &amp; Sell</option>
       <option value="Buy" ${journalFilters.side === 'Buy' ? 'selected' : ''}>Buy only</option>
       <option value="Sell" ${journalFilters.side === 'Sell' ? 'selected' : ''}>Sell only</option>
-    </select>
-    <select class="jt-select" id="fVerdict">
-      <option value="go" ${journalFilters.verdict === 'go' ? 'selected' : ''}>GO trades</option>
-      <option value="nogo" ${journalFilters.verdict === 'nogo' ? 'selected' : ''}>Skipped (NO GO)</option>
-      <option value="all" ${journalFilters.verdict === 'all' ? 'selected' : ''}>Everything</option>
     </select>
     <select class="jt-select" id="fOutcome">
       <option value="all" ${journalFilters.outcome === 'all' ? 'selected' : ''}>All outcomes</option>
@@ -2581,7 +2581,6 @@ function renderJournalToolbar() {
   document.getElementById('fRange').addEventListener('change', e => { journalFilters.range = e.target.value; renderJournalDashboard(); });
   document.getElementById('fSetup').addEventListener('change', e => { journalFilters.setup = e.target.value; renderJournalDashboard(); });
   document.getElementById('fSide').addEventListener('change', e => { journalFilters.side = e.target.value; renderJournalDashboard(); });
-  document.getElementById('fVerdict').addEventListener('change', e => { journalFilters.verdict = e.target.value; renderJournalDashboard(); });
   document.getElementById('fOutcome').addEventListener('change', e => { journalFilters.outcome = e.target.value; renderJournalDashboard(); });
 
   document.getElementById('btnExport').addEventListener('click', () => {
@@ -3056,11 +3055,6 @@ function entryDetailHTML(e) {
       ${confluenceEditHTML}
     </div>
     <div class="detail-section">
-      <div class="detail-heading">Daily open &amp; timing/risk checks</div>
-      ${checksHTML(e.dailyOpenChecks)}
-      ${checksHTML(e.timingRiskChecks)}
-    </div>
-    <div class="detail-section">
       <div class="detail-heading">Outcome</div>
       ${outcomeHTML}
     </div>
@@ -3088,7 +3082,7 @@ function entryRowHTML(e) {
             ${e.verdict === 'GO' ? outcomeTag(e) : ''}
           </div>
           <div class="entry-meta">${e.date} · ${e.day} · ${e.time} · ${e.setupTypeLabel || 'no setup'}${e.setupGrade ? ' · ' + e.setupGrade.label : ''}${e.trade.entryPrice !== null && e.trade.entryPrice !== undefined ? ' · Entry ' + e.trade.entryPrice : ''}</div>
-          ${e.outcome && e.outcome.status === 'loss' && e.outcome.notes ? `<div class="entry-loss-note"><i class="ti ti-alert-triangle" aria-hidden="true"></i>${e.outcome.notes}</div>` : ''}
+          ${journalFilters.outcome === 'loss' && e.outcome && e.outcome.status === 'loss' && e.outcome.notes ? `<div class="entry-loss-note"><i class="ti ti-alert-triangle" aria-hidden="true"></i>${e.outcome.notes}</div>` : ''}
         </div>
         ${canQuickOpen ? `<button type="button" class="quick-open-btn" data-quick-open="${e.id}" title="Mark as Open"><i class="ti ti-player-play" aria-hidden="true"></i>Open</button>` : ''}
         <i class="ti ti-chevron-right entry-chevron" aria-hidden="true"></i>
