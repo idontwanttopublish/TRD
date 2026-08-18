@@ -478,6 +478,22 @@
     margin: -3px 0 9px;
   }
 
+  .entry-loss-note {
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: #E39298;
+    background: #1E1315;
+    border: 1px solid #3A1E22;
+    border-radius: 7px;
+    padding: 7px 9px;
+    margin-top: 8px;
+  }
+
+  .entry-loss-note i {
+    color: #F2565C;
+    margin-right: 5px;
+  }
+
   .step-title {
     font-family: 'Space Grotesk', 'Inter', sans-serif;
     font-size: 19px;
@@ -2442,7 +2458,7 @@ function updateNavCount() {
 /* =====================================================
    JOURNAL DASHBOARD — filters, stats, charts, entry list
    ===================================================== */
-let journalFilters = { range: 'all', setup: 'all', side: 'all', verdict: 'go' };
+let journalFilters = { range: 'all', setup: 'all', side: 'all', verdict: 'go', outcome: 'all' };
 let expandedEntryId = null;
 let journalEditConfluence = {};
 let journalSubView = 'dashboard';
@@ -2485,6 +2501,7 @@ function filteredEntries() {
     if (journalFilters.setup !== 'all' && e.setupType !== journalFilters.setup) return false;
     if (journalFilters.side !== 'all' && e.side !== journalFilters.side) return false;
     if (journalFilters.verdict !== 'all' && e.verdict !== (journalFilters.verdict === 'go' ? 'GO' : 'NO GO')) return false;
+    if (journalFilters.outcome !== 'all' && (!e.outcome || e.outcome.status !== journalFilters.outcome)) return false;
     return true;
   });
 }
@@ -2549,6 +2566,12 @@ function renderJournalToolbar() {
       <option value="nogo" ${journalFilters.verdict === 'nogo' ? 'selected' : ''}>Skipped (NO GO)</option>
       <option value="all" ${journalFilters.verdict === 'all' ? 'selected' : ''}>Everything</option>
     </select>
+    <select class="jt-select" id="fOutcome">
+      <option value="all" ${journalFilters.outcome === 'all' ? 'selected' : ''}>All outcomes</option>
+      <option value="win" ${journalFilters.outcome === 'win' ? 'selected' : ''}>Win</option>
+      <option value="loss" ${journalFilters.outcome === 'loss' ? 'selected' : ''}>Loss</option>
+      <option value="breakeven" ${journalFilters.outcome === 'breakeven' ? 'selected' : ''}>Breakeven</option>
+    </select>
     <button class="jt-btn" id="btnExport"><i class="ti ti-download" aria-hidden="true"></i> Export JSON</button>
     <button class="jt-btn" id="btnImport"><i class="ti ti-upload" aria-hidden="true"></i> Import</button>
     <input type="file" id="fileImport" accept="application/json" style="display:none;">
@@ -2559,6 +2582,7 @@ function renderJournalToolbar() {
   document.getElementById('fSetup').addEventListener('change', e => { journalFilters.setup = e.target.value; renderJournalDashboard(); });
   document.getElementById('fSide').addEventListener('change', e => { journalFilters.side = e.target.value; renderJournalDashboard(); });
   document.getElementById('fVerdict').addEventListener('change', e => { journalFilters.verdict = e.target.value; renderJournalDashboard(); });
+  document.getElementById('fOutcome').addEventListener('change', e => { journalFilters.outcome = e.target.value; renderJournalDashboard(); });
 
   document.getElementById('btnExport').addEventListener('click', () => {
     const data = JSON.stringify(getJournal(), null, 2);
@@ -3064,6 +3088,7 @@ function entryRowHTML(e) {
             ${e.verdict === 'GO' ? outcomeTag(e) : ''}
           </div>
           <div class="entry-meta">${e.date} · ${e.day} · ${e.time} · ${e.setupTypeLabel || 'no setup'}${e.setupGrade ? ' · ' + e.setupGrade.label : ''}${e.trade.entryPrice !== null && e.trade.entryPrice !== undefined ? ' · Entry ' + e.trade.entryPrice : ''}</div>
+          ${e.outcome && e.outcome.status === 'loss' && e.outcome.notes ? `<div class="entry-loss-note"><i class="ti ti-alert-triangle" aria-hidden="true"></i>${e.outcome.notes}</div>` : ''}
         </div>
         ${canQuickOpen ? `<button type="button" class="quick-open-btn" data-quick-open="${e.id}" title="Mark as Open"><i class="ti ti-player-play" aria-hidden="true"></i>Open</button>` : ''}
         <i class="ti ti-chevron-right entry-chevron" aria-hidden="true"></i>
