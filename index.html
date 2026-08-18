@@ -321,6 +321,47 @@
     font-size: 12px;
   }
 
+  .sync-badge {
+    position: fixed;
+    top: 14px;
+    left: 16px;
+    z-index: 50;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    border: 1px solid #262B35;
+    background: #14181F;
+    color: #5B6472;
+    transition: all 0.2s ease;
+  }
+
+  .sync-badge .sync-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #5B6472;
+    flex-shrink: 0;
+  }
+
+  .sync-badge.synced { color: #34C97F; border-color: rgba(52,201,127,0.35); }
+  .sync-badge.synced .sync-dot { background: #34C97F; box-shadow: 0 0 6px rgba(52,201,127,0.6); }
+
+  .sync-badge.syncing { color: #E8B34A; border-color: rgba(232,179,74,0.35); }
+  .sync-badge.syncing .sync-dot { background: #E8B34A; box-shadow: 0 0 6px rgba(232,179,74,0.6); animation: pulseSync 0.9s infinite ease-in-out; }
+
+  .sync-badge.error { color: #F2565C; border-color: rgba(242,86,92,0.35); }
+  .sync-badge.error .sync-dot { background: #F2565C; }
+
+  @keyframes pulseSync {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+
   .placeholder-box {
     text-align: center;
     padding: 34px 18px;
@@ -1101,6 +1142,7 @@
 </style>
 </head>
 <body>
+<div class="sync-badge syncing" id="syncBadge"><span class="sync-dot"></span><span id="syncBadgeText">Connecting…</span></div>
 <div class="top-points-badge" id="topPointsBadge"></div>
 <div class="shell" id="shell">
 
@@ -2193,9 +2235,23 @@ function renderVerdict() {
 }
 
 /* =====================================================
-   JOURNAL SYSTEM — local storage persistence
+   JOURNAL SYSTEM — Firebase Realtime Database (REST API)
+   with localStorage as an instant local cache/fallback
    ===================================================== */
 const JOURNAL_KEY = 'preTradeJournal_v1';
+const FIREBASE_BASE = 'https://earn-today-74f0d-default-rtdb.firebaseio.com';
+const FIREBASE_JOURNAL_URL = FIREBASE_BASE + '/journal.json';
+
+let firebaseReady = false; // becomes true once the initial cloud fetch completes
+
+function setSyncBadge(state, text) {
+  const badge = document.getElementById('syncBadge');
+  const label = document.getElementById('syncBadgeText');
+  if (!badge || !label) return;
+  badge.classList.remove('synced', 'syncing', 'error');
+  badge.classList.add(state);
+  label.textContent = text;
+}
 
 function getJournal() {
   try {
@@ -2207,13 +2263,65 @@ function getJournal() {
   }
 }
 
-function setJournalArr(arr) {
+function setJournalArr(arr, skipRemote) {
   try {
     localStorage.setItem(JOURNAL_KEY, JSON.stringify(arr));
-    return true;
   } catch (e) {
-    return false;
+    // ignore local cache failure
   }
+  if (!skipRemote) pushJournalToFirebase(arr);
+  return true;
+}
+
+// Fire-and-forget PUT of the full journal array to Firebase.
+function pushJournalToFirebase(arr) {
+  setSyncBadge('syncing', 'Syncing…');
+  fetch(FIREBASE_JOURNAL_URL, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(arr)
+  })
+    .then(res => {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      setSyncBadge('synced', 'Synced');
+    })
+    .catch(err => {
+      console.error('Firebase sync failed:', err);
+      setSyncBadge('error', 'Offline (saved locally)');
+    });
+}
+
+// Pull the journal from Firebase on load and reconcile with local cache.
+function loadJournalFromFirebase() {
+  setSyncBadge('syncing', 'Connecting…');
+  return fetch(FIREBASE_JOURNAL_URL)
+    .then(res => {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    })
+    .then(remote => {
+      firebaseReady = true;
+      if (Array.isArray(remote)) {
+        setJournalArr(remote, true);
+      } else if (remote && typeof remote === 'object') {
+        // Firebase may store as an object map if it was ever written that way; normalize to array.
+        setJournalArr(Object.values(remote), true);
+      } else if (remote === null) {
+        // Nothing in the cloud yet — push whatever we have locally (or empty array) to initialize it.
+        pushJournalToFirebase(getJournal());
+      }
+      setSyncBadge('synced', 'Synced');
+      updateNavCount();
+      const journalViewEl = document.getElementById('viewJournal');
+      if (typeof renderJournalDashboard === 'function' && journalViewEl && journalViewEl.style.display !== 'none') {
+        renderJournalDashboard();
+      }
+    })
+    .catch(err => {
+      console.error('Firebase load failed:', err);
+      firebaseReady = true;
+      setSyncBadge('error', 'Offline (using local data)');
+    });
 }
 
 function addJournalEntry(entry) {
@@ -2472,18 +2580,52 @@ function renderJournalToolbar() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
+      let imported;
       try {
-        const imported = JSON.parse(reader.result);
-        if (!Array.isArray(imported)) throw new Error('bad format');
-        const existing = getJournal();
-        const existingIds = new Set(existing.map(e => e.id));
-        const merged = existing.concat(imported.filter(e => e && e.id && !existingIds.has(e.id)));
-        setJournalArr(merged);
-        updateNavCount();
-        renderJournalDashboard();
+        const parsed = JSON.parse(reader.result);
+        // Accept a plain array (this app's export format), or common wrapped/exported shapes
+        // like { "journal": [...] } or a Firebase object-map keyed by id.
+        if (Array.isArray(parsed)) {
+          imported = parsed;
+        } else if (parsed && Array.isArray(parsed.journal)) {
+          imported = parsed.journal;
+        } else if (parsed && typeof parsed === 'object') {
+          imported = Object.values(parsed);
+        } else {
+          throw new Error('bad format');
+        }
+        imported = imported.filter(e => e && typeof e === 'object');
+        if (!imported.length) throw new Error('empty');
       } catch (e) {
-        alert('Could not read that file — expecting the JSON export from this journal.');
+        alert('Could not read that file — expecting a JSON export from this journal (an array of entries).');
+        ev.target.value = '';
+        return;
       }
+
+      // Make sure every imported entry has an id so it can be merged/deduped.
+      imported.forEach(e => { if (!e.id) e.id = makeId(); });
+
+      const existing = getJournal();
+      const replaceAll = confirm(
+        `Import ${imported.length} ${imported.length === 1 ? 'entry' : 'entries'}.\n\n` +
+        `Press OK to MERGE with your existing ${existing.length} ${existing.length === 1 ? 'entry' : 'entries'} (duplicates by ID are skipped).\n` +
+        `Press Cancel to REPLACE your entire journal with only the imported data.`
+      );
+
+      let finalArr;
+      if (replaceAll) {
+        finalArr = imported;
+      } else {
+        const existingIds = new Set(existing.map(e => e.id));
+        finalArr = existing.concat(imported.filter(e => !existingIds.has(e.id)));
+      }
+
+      setJournalArr(finalArr);
+      updateNavCount();
+      renderJournalDashboard();
+      alert(replaceAll
+        ? `Journal replaced with ${finalArr.length} imported ${finalArr.length === 1 ? 'entry' : 'entries'}, and synced to the cloud.`
+        : `Import complete — journal now has ${finalArr.length} ${finalArr.length === 1 ? 'entry' : 'entries'}, and synced to the cloud.`);
     };
     reader.readAsText(file);
     ev.target.value = '';
@@ -2946,14 +3088,16 @@ function renderJournalDashboard() {
   const body = document.getElementById('journalBody');
   const toolbar = document.getElementById('journalToolbar');
 
+  // Import/Export/Clear should always be reachable, even with an empty journal
+  // or while viewing the Dashboard sub-tab.
+  renderJournalToolbar();
+
   if (getJournal().length === 0) {
-    toolbar.innerHTML = '';
-    body.innerHTML = `<div class="empty-journal"><i class="ti ti-notebook" aria-hidden="true"></i>No trades logged yet.<br>Complete a checklist and save a GO trade to start building your journal.</div>`;
+    body.innerHTML = `<div class="empty-journal"><i class="ti ti-notebook" aria-hidden="true"></i>No trades logged yet.<br>Complete a checklist and save a GO trade, or use Import above to load existing data.</div>`;
     return;
   }
 
   if (journalSubView === 'dashboard') {
-    toolbar.innerHTML = '';
     const chartsAvailable = typeof Chart !== 'undefined';
     let html = statCardsHTML(stats);
     if (!chartsAvailable) {
@@ -2979,7 +3123,6 @@ function renderJournalDashboard() {
   }
 
   // Orders view — Open trades first, then Marked, then Closed (and anything else) last
-  renderJournalToolbar();
   updateNavCount();
   const orderStatusRank = (e) => {
     if (e.status === 'open') return 0;
@@ -3138,6 +3281,7 @@ renderStep();
 renderRail();
 renderOverallBanner();
 updateNavCount();
+loadJournalFromFirebase();
 </script>
 </body>
 </html>
