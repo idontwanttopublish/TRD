@@ -1241,6 +1241,7 @@
 
   <div class="top-nav">
     <button class="nav-tab active" id="tabChecklist" data-view="checklist"><i class="ti ti-clipboard-check" aria-hidden="true"></i> Checklist</button>
+    <button class="nav-tab" id="tabManage" data-view="manage"><i class="ti ti-list-details" aria-hidden="true"></i> Manage<span class="nav-count" id="manageNavCount"></span></button>
     <button class="nav-tab" id="tabJournal" data-view="journal"><i class="ti ti-notebook" aria-hidden="true"></i> Journal<span class="nav-count" id="navCount"></span></button>
   </div>
 
@@ -1261,6 +1262,13 @@
 
     <div class="card" id="card"></div>
 
+  </div>
+
+  <div class="journal-view" id="viewManage" style="display:none;">
+    <div class="eyebrow">Active trades</div>
+    <h1>Manage trades</h1>
+    <div class="journal-toolbar" id="manageToolbar"></div>
+    <div class="journal-body" id="manageBody"></div>
   </div>
 
   <div class="journal-view" id="viewJournal" style="display:none;">
@@ -2757,6 +2765,14 @@ function updateNavCount() {
   el.textContent = n > 0 ? String(n) : '';
 }
 
+function updateManageNavCount() {
+  const el = document.getElementById('manageNavCount');
+  if (!el) return;
+  const entries = getJournal().filter(e => e.verdict === 'GO' && (!e.outcome || !['win', 'loss', 'breakeven'].includes(e.outcome.status)));
+  const n = entries.length;
+  el.textContent = n > 0 ? String(n) : '';
+}
+
 /* =====================================================
    JOURNAL DASHBOARD — filters, stats, charts, entry list
    ===================================================== */
@@ -2782,12 +2798,15 @@ const chartInstances = {};
 
 function switchView(view) {
   document.getElementById('tabChecklist').classList.toggle('active', view === 'checklist');
+  document.getElementById('tabManage').classList.toggle('active', view === 'manage');
   document.getElementById('tabJournal').classList.toggle('active', view === 'journal');
   document.getElementById('viewChecklist').style.display = view === 'checklist' ? '' : 'none';
+  document.getElementById('viewManage').style.display = view === 'manage' ? '' : 'none';
   document.getElementById('viewJournal').style.display = view === 'journal' ? '' : 'none';
-  document.getElementById('shell').classList.toggle('wide', view === 'journal');
-  document.getElementById('topPointsBadge').style.display = view === 'journal' ? 'none' : '';
+  document.getElementById('shell').classList.toggle('wide', view === 'journal' || view === 'manage');
+  document.getElementById('topPointsBadge').style.display = (view === 'journal' || view === 'manage') ? 'none' : '';
   if (view === 'journal') renderJournalDashboard();
+  if (view === 'manage') renderManageView();
 }
 
 function rangeCutoff(range) {
@@ -3636,6 +3655,7 @@ function renderJournalDashboard() {
 }
 
 document.getElementById('tabChecklist').addEventListener('click', () => switchView('checklist'));
+document.getElementById('tabManage').addEventListener('click', () => switchView('manage'));
 document.getElementById('tabJournal').addEventListener('click', () => switchView('journal'));
 document.getElementById('subTabDashboard').addEventListener('click', () => {
   journalSubView = 'dashboard';
