@@ -1509,6 +1509,8 @@ function preciseNeeded() {
 function preciseComplete() {
   if (!preciseNeeded()) return true;
   if (preciseState.types.length === 0) return false;
+  // If 'none' is selected, consider it complete
+  if (preciseState.types.includes('none')) return true;
   return preciseState.types.every(t => {
     const d = preciseState[t];
     if (!d.dropTF) return false;
@@ -1910,6 +1912,7 @@ function renderStep() {
     html += `<div class="dir-field-label" style="margin-bottom:9px;">Precise type</div>`;
     html += `<div class="chip-select" style="margin-bottom:20px;">`;
     [
+      { val: 'none', label: 'No Precise' },
       { val: 'isl', label: 'ISL Precise' },
       { val: 'hns', label: 'HNS Precise' }
     ].forEach(opt => {
@@ -1918,8 +1921,8 @@ function renderStep() {
     });
     html += `</div>`;
 
-    // Show Precised Zone inputs when zone size is 50+
-    const showPrecisedZone = zoneSizeState.size === '50+';
+    // Show Precised Zone inputs when zone size is 50+ AND precise type is not 'none'
+    const showPrecisedZone = zoneSizeState.size === '50+' && !preciseState.types.includes('none');
     if (showPrecisedZone) {
       html += `<div class="setup-detail-title" style="margin-top:6px;">Precised Zone</div>`;
       html += `<div class="dir-field">
@@ -1948,6 +1951,7 @@ function renderStep() {
       }
     }
 
+    // Only show ISL/HNS blocks if those types are selected (not 'none')
     if (preciseState.types.includes('isl')) {
       html += renderPreciseBlock('ISL Precise', 'isl', "ISL Zone SHOULD SAME IN PRECISE TF Zone, Don't Come Out from Zone");
     }
@@ -2221,9 +2225,18 @@ function renderStep() {
         const group = el.getAttribute('data-pgroup');
         const val = el.getAttribute('data-val');
         if (group === 'ptype') {
-          const idx = preciseState.types.indexOf(val);
-          if (idx >= 0) preciseState.types.splice(idx, 1);
-          else preciseState.types.push(val);
+          // Handle 'none' selection - clear all other types
+          if (val === 'none') {
+            preciseState.types = ['none'];
+          } else {
+            // Remove 'none' if selecting any other type
+            const noneIdx = preciseState.types.indexOf('none');
+            if (noneIdx >= 0) preciseState.types.splice(noneIdx, 1);
+            
+            const idx = preciseState.types.indexOf(val);
+            if (idx >= 0) preciseState.types.splice(idx, 1);
+            else preciseState.types.push(val);
+          }
         } else {
           const field = el.getAttribute('data-pfield');
           if (field === 'zoneSize') {
@@ -2367,13 +2380,16 @@ function renderVerdict() {
   if (!preciseComplete()) {
     let preciseLabel = "No precise type selected";
     if (preciseState.types.length > 0) {
-      const badType = preciseState.types.find(t => {
-        const d = preciseState[t];
-        return !d.dropTF;
-      });
-      if (badType) {
-        const name = badType === 'isl' ? 'ISL' : 'HNS';
-        preciseLabel = `${name}: select the drop timeframe (2 TF below)`;
+      // If 'none' is selected, it's complete so we shouldn't reach here
+      if (!preciseState.types.includes('none')) {
+        const badType = preciseState.types.find(t => {
+          const d = preciseState[t];
+          return !d.dropTF;
+        });
+        if (badType) {
+          const name = badType === 'isl' ? 'ISL' : 'HNS';
+          preciseLabel = `${name}: select the drop timeframe (2 TF below)`;
+        }
       }
     }
     failedSteps.unshift({ step: "Precise", label: preciseLabel });
