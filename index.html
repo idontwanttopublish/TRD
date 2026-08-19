@@ -1872,6 +1872,16 @@ function renderStep() {
   } else if (step.type === 'placeholder') {
     html += `<div class="placeholder-box">Confluence checklist isn't defined yet.<br>Send the details and it'll be wired in here.</div>`;
   } else {
+    if (stepIndex === 0) {
+      html += `<div class="dir-field-label" style="margin-bottom:9px;">Pair</div>`;
+      html += `<div class="chip-select" id="setupPairChips" style="margin-bottom:${pendingSavePair === 'Others' ? '10px' : '16px'};">
+        <div class="chip-option ${pendingSavePair === 'XAU/USD' ? 'selected' : ''}" data-save-pair="XAU/USD">XAU/USD</div>
+        <div class="chip-option ${pendingSavePair === 'Others' ? 'selected' : ''}" data-save-pair="Others">Others</div>
+      </div>`;
+      if (pendingSavePair === 'Others') {
+        html += `<input class="form-input" id="setupPairOtherInput" placeholder="Enter pair name" value="${pendingSaveOtherPair}" style="margin-bottom:16px;">`;
+      }
+    }
     html += `<div class="items">`;
     step.items.forEach((label, i) => {
       const isChecked = checks[stepIndex][i];
@@ -2006,6 +2016,22 @@ function renderStep() {
   } else if (step.type === 'placeholder') {
     // no interactive elements
   } else {
+    if (stepIndex === 0) {
+      const pairChips = document.getElementById('setupPairChips');
+      if (pairChips) {
+        pairChips.querySelectorAll('[data-save-pair]').forEach(el => {
+          el.addEventListener('click', () => {
+            pendingSavePair = el.getAttribute('data-save-pair');
+            renderStep();
+            renderRail();
+          });
+        });
+      }
+      const pairOtherInput = document.getElementById('setupPairOtherInput');
+      if (pairOtherInput) {
+        pairOtherInput.addEventListener('input', e => { pendingSaveOtherPair = e.target.value; });
+      }
+    }
     card.querySelectorAll('.item').forEach(el => {
       el.addEventListener('click', () => {
         const idx = parseInt(el.getAttribute('data-idx'), 10);
@@ -2160,13 +2186,7 @@ function renderVerdict() {
         <div class="chip-option ${pendingSaveStatus === 'marked' ? 'selected' : ''}" data-save-status="marked">Marked</div>
         <div class="chip-option ${pendingSaveStatus === 'open' ? 'selected' : ''}" data-save-status="open">Open</div>
       </div>
-      <div class="field-note" style="margin-bottom:10px;">You can mark a trade Closed from the Journal once you pick Win, Loss, or Breakeven.</div>
-      <div class="dir-field-label" style="margin-bottom:9px;">Pair</div>
-      <div class="chip-select" id="savePairChips" style="margin-bottom:${pendingSavePair === 'Others' ? '10px' : '16px'};">
-        <div class="chip-option ${pendingSavePair === 'XAU/USD' ? 'selected' : ''}" data-save-pair="XAU/USD">XAU/USD</div>
-        <div class="chip-option ${pendingSavePair === 'Others' ? 'selected' : ''}" data-save-pair="Others">Others</div>
-      </div>
-      ${pendingSavePair === 'Others' ? `<input class="form-input" id="savePairOtherInput" placeholder="Enter pair name" value="${pendingSaveOtherPair}" style="margin-bottom:16px;">` : ''}
+      <div class="field-note" style="margin-bottom:16px;">You can mark a trade Closed from the Journal once you pick Win, Loss, or Breakeven.</div>
       <div class="form-grid" style="margin-bottom:10px;">
         <input class="form-input" type="number" step="any" id="saveEntryPriceInput" placeholder="Entry price" value="${pendingSaveEntryPrice}">
         <input class="form-input" type="number" step="any" id="saveSLInput" placeholder="SL price" value="${pendingSaveSL}">
@@ -2192,16 +2212,6 @@ function renderVerdict() {
         el.classList.add('selected');
       });
     });
-    document.getElementById('savePairChips').querySelectorAll('[data-save-pair]').forEach(el => {
-      el.addEventListener('click', () => {
-        pendingSavePair = el.getAttribute('data-save-pair');
-        renderVerdict();
-      });
-    });
-    const pairOtherInput = document.getElementById('savePairOtherInput');
-    if (pairOtherInput) {
-      pairOtherInput.addEventListener('input', e => { pendingSaveOtherPair = e.target.value; });
-    }
     document.getElementById('saveEntryPriceInput').addEventListener('input', e => { pendingSaveEntryPrice = e.target.value; });
     document.getElementById('saveSLInput').addEventListener('input', e => { pendingSaveSL = e.target.value; });
     document.getElementById('saveJournalBtn').addEventListener('click', () => {
