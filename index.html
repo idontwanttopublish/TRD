@@ -1413,6 +1413,7 @@ let preciseState = {
   hns: { dropTF: null }
 };
 let zoneSizeState = { size: null };
+let zoneDetailsState = { zoneStart: '', zoneEnd: '' };
 
 function getTwoTFsBelow(baseTF) {
   if (!baseTF) return [];
@@ -1426,6 +1427,11 @@ function getTwoTFsBelow(baseTF) {
 
 function zoneSizeComplete() {
   if (selectedSetupKey === 'hns' || selectedSetupKey === 'tl') return true;
+  // For BPE + XAU/USD, require Zone Start and Zone End to be filled
+  const showZoneDetails = pendingSavePair === 'XAU/USD' && selectedSetupKey === 'bpe';
+  if (showZoneDetails) {
+    return zoneDetailsState.zoneStart !== '' && zoneDetailsState.zoneEnd !== '' && !!zoneSizeState.size;
+  }
   return !!zoneSizeState.size;
 }
 
@@ -1770,7 +1776,43 @@ function renderStep() {
       html += `</div>`;
     }
   } else if (step.type === 'zonesize') {
-    html += `<div class="side-cards">`;
+    // Show Zone Details inputs only when XAU/USD and BPE are selected
+    const showZoneDetails = pendingSavePair === 'XAU/USD' && selectedSetupKey === 'bpe';
+    
+    if (showZoneDetails) {
+      html += `<div class="dir-field">
+        <div class="dir-field-label">Zone Start</div>
+        <input class="form-input" id="zoneStartInput" type="number" step="any" placeholder="Enter Zone Start" value="${zoneDetailsState.zoneStart}">
+      </div>`;
+      html += `<div class="dir-field" style="margin-top:12px;">
+        <div class="dir-field-label">Zone End</div>
+        <input class="form-input" id="zoneEndInput" type="number" step="any" placeholder="Enter Zone End" value="${zoneDetailsState.zoneEnd}">
+      </div>`;
+      
+      // Calculate pips and auto-set zone size
+      const zoneStart = parseFloat(zoneDetailsState.zoneStart);
+      const zoneEnd = parseFloat(zoneDetailsState.zoneEnd);
+      let calculatedPips = null;
+      if (!isNaN(zoneStart) && !isNaN(zoneEnd)) {
+        if (setupSide === 'Buy') {
+          calculatedPips = zoneStart - zoneEnd;
+        } else if (setupSide === 'Sell') {
+          calculatedPips = zoneEnd - zoneStart;
+        }
+      }
+      
+      if (calculatedPips !== null && calculatedPips >= 0) {
+        const pipsDisplay = calculatedPips.toFixed(1);
+        const zoneSizeLabel = calculatedPips <= 40 ? '<=40' : '50+';
+        const activeCard = zoneSizeState.size === zoneSizeLabel ? 'selected' : '';
+        html += `<div class="field-note" style="margin-top:14px;">
+          Calculated Zone Size: <strong>${pipsDisplay} pips</strong> 
+          ${calculatedPips <= 40 ? '(40 pips or less)' : '(50+ pips)'}
+        </div>`;
+      }
+    }
+    
+    html += `<div class="side-cards" style="margin-top:16px;">`;
     [
       { val: "<=40", label: "40 PIPS OR LESS", icon: "ti-minimize" },
       { val: "50+", label: "50 PIPS +", icon: "ti-maximize" }
@@ -1955,6 +1997,54 @@ function renderStep() {
       });
     }
   } else if (step.type === 'zonesize') {
+    // Handle Zone Details input fields
+    const zoneStartInput = document.getElementById('zoneStartInput');
+    const zoneEndInput = document.getElementById('zoneEndInput');
+    
+    if (zoneStartInput) {
+      zoneStartInput.addEventListener('input', e => {
+        zoneDetailsState.zoneStart = e.target.value;
+        // Auto-calculate and set zone size based on inputs
+        const zoneStart = parseFloat(zoneDetailsState.zoneStart);
+        const zoneEnd = parseFloat(zoneDetailsState.zoneEnd);
+        if (!isNaN(zoneStart) && !isNaN(zoneEnd)) {
+          let calculatedPips = null;
+          if (setupSide === 'Buy') {
+            calculatedPips = zoneStart - zoneEnd;
+          } else if (setupSide === 'Sell') {
+            calculatedPips = zoneEnd - zoneStart;
+          }
+          if (calculatedPips !== null && calculatedPips >= 0) {
+            zoneSizeState.size = calculatedPips <= 40 ? '<=40' : '50+';
+          }
+        }
+        renderStep();
+        renderRail();
+      });
+    }
+    
+    if (zoneEndInput) {
+      zoneEndInput.addEventListener('input', e => {
+        zoneDetailsState.zoneEnd = e.target.value;
+        // Auto-calculate and set zone size based on inputs
+        const zoneStart = parseFloat(zoneDetailsState.zoneStart);
+        const zoneEnd = parseFloat(zoneDetailsState.zoneEnd);
+        if (!isNaN(zoneStart) && !isNaN(zoneEnd)) {
+          let calculatedPips = null;
+          if (setupSide === 'Buy') {
+            calculatedPips = zoneStart - zoneEnd;
+          } else if (setupSide === 'Sell') {
+            calculatedPips = zoneEnd - zoneStart;
+          }
+          if (calculatedPips !== null && calculatedPips >= 0) {
+            zoneSizeState.size = calculatedPips <= 40 ? '<=40' : '50+';
+          }
+        }
+        renderStep();
+        renderRail();
+      });
+    }
+    
     card.querySelectorAll('[data-zonesize]').forEach(el => {
       el.addEventListener('click', () => {
         const val = el.getAttribute('data-zonesize');
@@ -2265,6 +2355,7 @@ function renderVerdict() {
       hns: { dropTF: null }
     };
     zoneSizeState = { size: null };
+    zoneDetailsState = { zoneStart: '', zoneEnd: '' };
     confluenceState = {
       types: [],
       hns: { timeframe: null, fresh: null },
