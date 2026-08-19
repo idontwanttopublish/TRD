@@ -1479,6 +1479,7 @@ let confluenceState = {
 
 function confluenceComplete() {
   if (confluenceState.types.length === 0) return false;
+  if (confluenceState.types.includes('none')) return true;
   if (confluenceState.types.includes('hns')) {
     if (!confluenceState.hns.timeframe || !confluenceState.hns.fresh) return false;
   }
@@ -1806,12 +1807,17 @@ function renderStep() {
       html += renderPreciseBlock('HNS Precise', 'hns', "HNS Zone SHOULD SAME IN PRECISE TF Zone, Don't Come Out from Zone");
     }
   } else if (step.type === 'confluence') {
+    if (selectedSetupKey === 'hns') {
+      const staleIdx = confluenceState.types.indexOf('hns');
+      if (staleIdx >= 0) confluenceState.types.splice(staleIdx, 1);
+    }
     html += `<div class="dir-field-label" style="margin-bottom:9px;">Confluence type</div>`;
     html += `<div class="chip-select" style="margin-bottom:20px;">`;
     [
       { val: 'hns', label: 'HNS SNR' },
-      { val: 'tl', label: 'TL' }
-    ].forEach(opt => {
+      { val: 'tl', label: 'TL' },
+      { val: 'none', label: 'None' }
+    ].filter(opt => opt.val !== 'hns' || selectedSetupKey !== 'hns').forEach(opt => {
       const sel = confluenceState.types.includes(opt.val) ? 'selected' : '';
       html += `<div class="chip-option ${sel}" data-group="type" data-cfield="type" data-val="${opt.val}">${opt.label}</div>`;
     });
@@ -1978,8 +1984,15 @@ function renderStep() {
         const val = el.getAttribute('data-val');
         if (group === 'type') {
           const idx = confluenceState.types.indexOf(val);
-          if (idx >= 0) confluenceState.types.splice(idx, 1);
-          else confluenceState.types.push(val);
+          if (idx >= 0) {
+            confluenceState.types.splice(idx, 1);
+          } else if (val === 'none') {
+            confluenceState.types = ['none'];
+          } else {
+            const noneIdx = confluenceState.types.indexOf('none');
+            if (noneIdx >= 0) confluenceState.types.splice(noneIdx, 1);
+            confluenceState.types.push(val);
+          }
         } else if (group === 'tlMode') {
           confluenceState.tlMode = confluenceState.tlMode === val ? null : val;
         } else {
