@@ -2773,6 +2773,143 @@ function updateManageNavCount() {
   el.textContent = n > 0 ? String(n) : '';
 }
 
+function renderManageView() {
+  const toolbar = document.getElementById('manageToolbar');
+  const body = document.getElementById('manageBody');
+  
+  // Get all marked and open trades
+  const entries = getJournal().filter(e => 
+    e.verdict === 'GO' && 
+    (!e.outcome || !['win', 'loss', 'breakeven'].includes(e.outcome.status))
+  );
+  
+  // Sort: open first, then marked
+  const sortedEntries = entries.slice().sort((a, b) => {
+    if (a.status === 'open' && b.status !== 'open') return -1;
+    if (a.status !== 'open' && b.status === 'open') return 1;
+    return 0;
+  });
+  
+  updateManageNavCount();
+  
+  if (sortedEntries.length === 0) {
+    body.innerHTML = `<div class="empty-journal"><i class="ti ti-list-details" aria-hidden="true"></i>No active trades to manage.<br>Marked and open trades will appear here.</div>`;
+    return;
+  }
+  
+  body.innerHTML = `<div class="entry-list">${sortedEntries.map(entryRowHTML).join('')}</div>`;
+  
+  body.querySelectorAll('[data-toggle-entry]').forEach(el => {
+    el.addEventListener('click', () => {
+      const id = el.getAttribute('data-toggle-entry');
+      if (expandedEntryId === id) delete journalEditConfluence[id];
+      expandedEntryId = expandedEntryId === id ? null : id;
+      renderManageView();
+    });
+  });
+  
+  body.querySelectorAll('[data-quick-open]').forEach(el => {
+    el.addEventListener('click', (evt) => {
+      evt.stopPropagation();
+      const id = el.getAttribute('data-quick-open');
+      if (confirm('Mark this trade as Open?')) {
+        quickOpenEntry(id);
+        renderManageView();
+      }
+    });
+  });
+  
+  body.querySelectorAll('[data-detail-status]').forEach(el => {
+    el.addEventListener('click', () => {
+      el.parentElement.querySelectorAll('[data-detail-status]').forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+    });
+  });
+  
+  body.querySelectorAll('[data-cf-group]').forEach(el => {
+    el.addEventListener('click', () => {
+      const container = el.closest('.editable-confluence');
+      const id = container.getAttribute('data-details-id');
+      const cs = journalEditConfluence[id];
+      if (!cs) return;
+      const group = el.getAttribute('data-cf-group');
+      const field = el.getAttribute('data-cf-field');
+      const val = el.getAttribute('data-cf-val');
+      
+      if (group === 'type') {
+        const idx = cs.types.indexOf(val);
+        if (idx >= 0) cs.types.splice(idx, 1);
+        else cs.types.push(val);
+      } else if (group === 'tlMode') {
+        cs.tlMode = cs.tlMode === val ? null : val;
+      } else {
+        cs[group][field] = cs[group][field] === val ? null : val;
+      }
+      renderManageView();
+    });
+  });
+  
+  body.querySelectorAll('[data-save-entry]').forEach(el => {
+    el.addEventListener('click', () => {
+      const id = el.getAttribute('data-save-entry');
+      const container = body.querySelector(`.entry-row[data-entry-id="${id}"]`);
+      
+      const statusChip = container.querySelector('[data-detail-status].selected');
+      const status = statusChip ? statusChip.getAttribute('data-detail-status') : 'marked';
+      
+      const trade = {};
+      const outcome = {};
+      
+      container.querySelectorAll('[data-trade-field]').forEach(inp => {
+        const f = inp.getAttribute('data-trade-field');
+        let v = inp.value.trim();
+        if (f === 'entryPrice' || f === 'stopLoss' || f === 'targetPrice') {
+          v = v === '' ? null : +v;
+        }
+        trade[f] = v;
+      });
+      
+      container.querySelectorAll('[data-outcome-field]').forEach(inp => {
+        const f = inp.getAttribute('data-outcome-field');
+        let v = inp.value.trim();
+        if (f === 'exitPrice' || f === 'pnl' || f === 'rMultiple') {
+          v = v === '' ? null : +v;
+        }
+        outcome[f] = v;
+      });
+      
+      const detailsContainer = container.querySelector('.entry-detail');
+      const notesEl = detailsContainer.querySelector('[data-outcome-field="notes"]');
+      outcome.notes = notesEl ? notesEl.value : '';
+      
+      const patch = { trade, status };
+      if (status === 'open' || outcome.exitPrice !== null) {
+        patch.outcome = Object.assign({}, outcome, {
+          status: status === 'open' ? 'open' : (outcome.exitPrice !== null ? outcome.status : 'marked'),
+          closedAt: outcome.exitPrice !== null ? Date.now() : null
+        });
+      }
+      
+      updateJournalEntry(id, patch);
+      expandedEntryId = null;
+      delete journalEditConfluence[id];
+      renderManageView();
+      updateNavCount();
+    });
+  });
+  
+  body.querySelectorAll('[data-delete-entry]').forEach(el => {
+    el.addEventListener('click', (evt) => {
+      evt.stopPropagation();
+      const id = el.getAttribute('data-delete-entry');
+      if (confirm('Delete this entry?')) {
+        deleteJournalEntry(id);
+        renderManageView();
+      }
+    });
+  });
+}
+
 /* =====================================================
    JOURNAL DASHBOARD — filters, stats, charts, entry list
    ===================================================== */
