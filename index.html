@@ -1861,7 +1861,16 @@ function renderStep() {
       const zoneEnd = parseFloat(zoneDetailsState.zoneEnd);
       let calculatedPips = null;
       if (!isNaN(zoneStart) && !isNaN(zoneEnd)) {
-        if (setupSide === 'Buy') {
+        // Check if both inputs are 4-digit numbers
+        const is4DigitStart = zoneDetailsState.zoneStart.length === 4;
+        const is4DigitEnd = zoneDetailsState.zoneEnd.length === 4;
+        
+        if (is4DigitStart && is4DigitEnd) {
+          // For 4-digit inputs, calculate difference and multiply by 10
+          // Example: 4487 - 4480 = 7, then 7 * 10 = 70 pips
+          const diff = Math.abs(zoneStart - zoneEnd);
+          calculatedPips = diff * 10;
+        } else if (setupSide === 'Buy') {
           calculatedPips = zoneStart - zoneEnd;
         } else if (setupSide === 'Sell') {
           calculatedPips = zoneEnd - zoneStart;
@@ -2106,7 +2115,16 @@ function renderStep() {
         const zoneEnd = parseFloat(zoneDetailsState.zoneEnd);
         if (!isNaN(zoneStart) && !isNaN(zoneEnd)) {
           let calculatedPips = null;
-          if (setupSide === 'Buy') {
+          // Check if both inputs are 4-digit numbers
+          const is4DigitStart = zoneDetailsState.zoneStart.length === 4;
+          const is4DigitEnd = zoneDetailsState.zoneEnd.length === 4;
+          
+          if (is4DigitStart && is4DigitEnd) {
+            // For 4-digit inputs, calculate difference and multiply by 10
+            // Example: 4487 - 4480 = 7, then 7 * 10 = 70 pips
+            const diff = Math.abs(zoneStart - zoneEnd);
+            calculatedPips = diff * 10;
+          } else if (setupSide === 'Buy') {
             calculatedPips = zoneStart - zoneEnd;
           } else if (setupSide === 'Sell') {
             calculatedPips = zoneEnd - zoneStart;
@@ -2135,11 +2153,23 @@ function renderStep() {
         const zoneStart = parseFloat(zoneDetailsState.zoneStart);
         const zoneEnd = parseFloat(zoneDetailsState.zoneEnd);
         if (!isNaN(zoneStart) && !isNaN(zoneEnd)) {
-          // Simplified formula: Absolute difference (Bigger - Smaller)
-          const diff = Math.abs(zoneStart - zoneEnd);
-          // XAU/USD: 1.0 difference = 10 pips
-          const calculatedPips = diff * 10;
-          if (calculatedPips >= 0) {
+          // Check if both inputs are 4-digit numbers
+          const is4DigitStart = zoneDetailsState.zoneStart.length === 4;
+          const is4DigitEnd = zoneDetailsState.zoneEnd.length === 4;
+          
+          let calculatedPips = null;
+          if (is4DigitStart && is4DigitEnd) {
+            // For 4-digit inputs, calculate difference and multiply by 10
+            // Example: 4487 - 4480 = 7, then 7 * 10 = 70 pips
+            const diff = Math.abs(zoneStart - zoneEnd);
+            calculatedPips = diff * 10;
+          } else if (setupSide === 'Buy') {
+            calculatedPips = zoneStart - zoneEnd;
+          } else if (setupSide === 'Sell') {
+            calculatedPips = zoneEnd - zoneStart;
+          }
+          
+          if (calculatedPips !== null && calculatedPips >= 0) {
             zoneSizeState.size = calculatedPips <= 40 ? '<=40' : '50+';
             // Update UI without full re-render to prevent keyboard from closing
             document.querySelectorAll('[data-zonesize]').forEach(el => {
