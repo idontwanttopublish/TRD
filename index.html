@@ -1414,6 +1414,7 @@ let preciseState = {
 };
 let zoneSizeState = { size: null };
 let zoneDetailsState = { zoneStart: '', zoneEnd: '' };
+let precisedZoneState = { zoneStart: '', zoneEnd: '' };
 
 function getTwoTFsBelow(baseTF) {
   if (!baseTF) return [];
@@ -1842,6 +1843,36 @@ function renderStep() {
     });
     html += `</div>`;
 
+    // Show Precised Zone inputs when zone size is 50+
+    const showPrecisedZone = zoneSizeState.size === '50+';
+    if (showPrecisedZone) {
+      html += `<div class="setup-detail-title" style="margin-top:6px;">Precised Zone</div>`;
+      html += `<div class="dir-field">
+        <div class="dir-field-label">Zone Start</div>
+        <input class="form-input" id="precisedZoneStartInput" type="number" step="any" placeholder="Enter Zone Start" value="${precisedZoneState.zoneStart}">
+      </div>`;
+      html += `<div class="dir-field" style="margin-top:12px;">
+        <div class="dir-field-label">Zone End</div>
+        <input class="form-input" id="precisedZoneEndInput" type="number" step="any" placeholder="Enter Zone End" value="${precisedZoneState.zoneEnd}">
+      </div>`;
+      
+      // Calculate pips for precised zone
+      const pZoneStart = parseFloat(precisedZoneState.zoneStart);
+      const pZoneEnd = parseFloat(precisedZoneState.zoneEnd);
+      let pCalculatedPips = null;
+      if (!isNaN(pZoneStart) && !isNaN(pZoneEnd)) {
+        const diff = Math.abs(pZoneStart - pZoneEnd);
+        pCalculatedPips = diff;
+      }
+      
+      if (pCalculatedPips !== null && pCalculatedPips >= 0) {
+        const pipsDisplay = pCalculatedPips.toFixed(1);
+        html += `<div class="field-note" style="margin-top:14px;">
+          Calculated Precised Zone Size: <strong>${pipsDisplay} pips</strong>
+        </div>`;
+      }
+    }
+
     if (preciseState.types.includes('isl')) {
       html += renderPreciseBlock('ISL Precise', 'isl', "ISL Zone SHOULD SAME IN PRECISE TF Zone, Don't Come Out from Zone");
     }
@@ -2071,6 +2102,24 @@ function renderStep() {
       });
     });
   } else if (step.type === 'precise') {
+    // Handle Precised Zone input fields
+    const precisedZoneStartInput = document.getElementById('precisedZoneStartInput');
+    const precisedZoneEndInput = document.getElementById('precisedZoneEndInput');
+    
+    if (precisedZoneStartInput) {
+      precisedZoneStartInput.addEventListener('input', e => {
+        precisedZoneState.zoneStart = e.target.value;
+        renderRail();
+      });
+    }
+    
+    if (precisedZoneEndInput) {
+      precisedZoneEndInput.addEventListener('input', e => {
+        precisedZoneState.zoneEnd = e.target.value;
+        renderRail();
+      });
+    }
+    
     card.querySelectorAll('[data-pgroup]').forEach(el => {
       el.addEventListener('click', () => {
         const group = el.getAttribute('data-pgroup');
@@ -2370,6 +2419,7 @@ function renderVerdict() {
     };
     zoneSizeState = { size: null };
     zoneDetailsState = { zoneStart: '', zoneEnd: '' };
+    precisedZoneState = { zoneStart: '', zoneEnd: '' };
     confluenceState = {
       types: [],
       hns: { timeframe: null, fresh: null },
@@ -2571,6 +2621,7 @@ function buildJournalEntry(verdictType, statusValue, symbolValue, tradeOverrides
     tradeScoreLabel: tradeScoreClass(tradeScore()),
     zoneSize: zoneSizeState.size,
     precise: JSON.parse(JSON.stringify(preciseState)),
+    precisedZone: JSON.parse(JSON.stringify(precisedZoneState)),
     confluence: JSON.parse(JSON.stringify(confluenceState)),
     dailyOpenChecks: steps[0].items.map((label, i) => ({ label, done: !!checks[0][i] })),
     timingRiskChecks: steps[steps.length - 1].items.map((label, i) => ({ label, done: !!checks[steps.length - 1][i] })),
@@ -2990,6 +3041,16 @@ function entryDetailHTML(e) {
         : `<div class="kv-row"><span>Setup</span><span>Not configured</span></div>`);
 
   const zoneSizeLabel = e.zoneSize || '—';
+  const precisedZoneRows = (e.precisedZone && e.precisedZone.zoneStart && e.precisedZone.zoneEnd)
+    ? (() => {
+        const pzStart = parseFloat(e.precisedZone.zoneStart);
+        const pzEnd = parseFloat(e.precisedZone.zoneEnd);
+        const pips = !isNaN(pzStart) && !isNaN(pzEnd) ? Math.abs(pzStart - pzEnd).toFixed(1) : '—';
+        return `<div class="kv-row"><span>Precised Zone Start</span><span>${e.precisedZone.zoneStart}</span></div>
+                <div class="kv-row"><span>Precised Zone End</span><span>${e.precisedZone.zoneEnd}</span></div>
+                <div class="kv-row"><span>Precised Zone Size</span><span>${pips} pips</span></div>`;
+      })()
+    : '';
   const preciseRows = (e.zoneSize === '50+' && (e.precise.types || []).length)
     ? e.precise.types.map(t => {
         const d = e.precise[t];
@@ -3181,7 +3242,7 @@ function entryDetailHTML(e) {
     </div>
     <div class="detail-section">
       <div class="detail-heading">Zone size — ${zoneSizeLabel}</div>
-      <div class="kv-grid">${preciseRows}</div>
+      <div class="kv-grid">${precisedZoneRows}${preciseRows}</div>
     </div>
     ${locked ? `<div class="field-note" style="margin-top:14px;"><i class="ti ti-lock" aria-hidden="true"></i> This trade is closed — details are locked and can't be edited.</div>` : ''}
     <div class="detail-section">
