@@ -1109,6 +1109,72 @@
     box-shadow: 0 0 12px rgba(217,131,46,0.5);
   }
 
+  /* Suggestion boxes */
+  .suggestion-box {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 12px;
+    margin-bottom: 14px;
+    border: 1px solid;
+  }
+  .suggestion-icon {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+  }
+  .suggestion-content { flex: 1; min-width: 0; }
+  .suggestion-title {
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .suggestion-text {
+    font-size: 13px;
+    line-height: 1.5;
+    color: #8A93A3;
+  }
+  .suggestion-box.large-zone {
+    background: #201113;
+    border-color: #4A1E22;
+  }
+  .suggestion-box.large-zone .suggestion-icon {
+    background: #2A1518;
+    color: #F2565C;
+  }
+  .suggestion-box.large-zone .suggestion-title {
+    color: #F98287;
+  }
+  .suggestion-box.medium-zone {
+    background: #241D0E;
+    border-color: #4A3C18;
+  }
+  .suggestion-box.medium-zone .suggestion-icon {
+    background: #2E2512;
+    color: #E8B34A;
+  }
+  .suggestion-box.medium-zone .suggestion-title {
+    color: #F3C978;
+  }
+  .suggestion-box.tl-ready {
+    background: #10201A;
+    border-color: #1F4A38;
+  }
+  .suggestion-box.tl-ready .suggestion-icon {
+    background: #122A22;
+    color: #34C97F;
+  }
+  .suggestion-box.tl-ready .suggestion-title {
+    color: #34C97F;
+  }
+
   .entry-detail { display: none; padding: 4px 14px 16px; border-top: 1px solid #1B1F28; }
   .entry-row.expanded .entry-detail { display: block; }
 
@@ -3229,9 +3295,53 @@ function entryDetailHTML(e) {
     </div>
   ` : '';
 
+  // Suggestion logic for marked zones with large precised zones
+  let suggestionHTML = '';
+  if ((e.status === 'marked' || (e.status === 'open' && !e.outcome?.status)) && e.precisedZone && e.precisedZone.zoneStart && e.precisedZone.zoneEnd) {
+    const pzStart = parseFloat(e.precisedZone.zoneStart);
+    const pzEnd = parseFloat(e.precisedZone.zoneEnd);
+    if (!isNaN(pzStart) && !isNaN(pzEnd)) {
+      const pips = Math.abs(pzStart - pzEnd);
+      const hasTLConfluence = e.confluence && e.confluence.types && e.confluence.types.includes('tl');
+      
+      if (pips >= 100) {
+        suggestionHTML = `
+          <div class="suggestion-box large-zone">
+            <div class="suggestion-icon"><i class="ti ti-alert-triangle" aria-hidden="true"></i></div>
+            <div class="suggestion-content">
+              <div class="suggestion-title">Large Zone (${pips.toFixed(1)} pips)</div>
+              <div class="suggestion-text">Wait for <strong>CMP HNS</strong> or <strong>BPE</strong> setup before entering. Zone is too wide for direct entry.</div>
+            </div>
+          </div>
+        `;
+      } else if (pips >= 50 && !hasTLConfluence) {
+        suggestionHTML = `
+          <div class="suggestion-box medium-zone">
+            <div class="suggestion-icon"><i class="ti ti-info-circle" aria-hidden="true"></i></div>
+            <div class="suggestion-content">
+              <div class="suggestion-title">Zone Size: ${pips.toFixed(1)} pips</div>
+              <div class="suggestion-text">Consider adding <strong>TL confluence</strong> for better entry precision, or wait for more confirmation.</div>
+            </div>
+          </div>
+        `;
+      } else if (pips >= 50 && hasTLConfluence) {
+        suggestionHTML = `
+          <div class="suggestion-box tl-ready">
+            <div class="suggestion-icon"><i class="ti ti-check-circle" aria-hidden="true"></i></div>
+            <div class="suggestion-content">
+              <div class="suggestion-title">Ready for TL Entry</div>
+              <div class="suggestion-text">TL confluence added. You can take entry from <strong>Trendline</strong> with proper risk management.</div>
+            </div>
+          </div>
+        `;
+      }
+    }
+  }
+
   return `
     ${liveBannerHTML}
     ${setupHighlightHTML}
+    ${suggestionHTML}
     <div class="detail-section">
       <div class="detail-heading">Direction · ${e.setupGrade ? e.setupGrade.label + ' · ' + e.setupPoints + ' pts' : ''}${e.tradeScoreLabel ? ' · Score ' + (e.tradeScore ?? 0) + '/' + (e.tradeScoreMax ?? '—') + ' (' + e.tradeScoreLabel.label + ')' : ''}</div>
       <div class="kv-grid">${dirRows}</div>
