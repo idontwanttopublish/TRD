@@ -2016,9 +2016,17 @@ function renderStep() {
           }
           if (calculatedPips !== null && calculatedPips >= 0) {
             zoneSizeState.size = calculatedPips <= 40 ? '<=40' : '50+';
+            // Update UI without full re-render to prevent keyboard from closing
+            document.querySelectorAll('[data-zonesize]').forEach(el => {
+              const val = el.getAttribute('data-zonesize');
+              if (val === zoneSizeState.size) {
+                el.classList.add('selected');
+              } else {
+                el.classList.remove('selected');
+              }
+            });
           }
         }
-        renderStep();
         renderRail();
       });
     }
@@ -2030,17 +2038,23 @@ function renderStep() {
         const zoneStart = parseFloat(zoneDetailsState.zoneStart);
         const zoneEnd = parseFloat(zoneDetailsState.zoneEnd);
         if (!isNaN(zoneStart) && !isNaN(zoneEnd)) {
-          let calculatedPips = null;
-          if (setupSide === 'Buy') {
-            calculatedPips = zoneStart - zoneEnd;
-          } else if (setupSide === 'Sell') {
-            calculatedPips = zoneEnd - zoneStart;
-          }
-          if (calculatedPips !== null && calculatedPips >= 0) {
+          // Simplified formula: Absolute difference (Bigger - Smaller)
+          const diff = Math.abs(zoneStart - zoneEnd);
+          // XAU/USD: 1.0 difference = 10 pips
+          const calculatedPips = diff * 10;
+          if (calculatedPips >= 0) {
             zoneSizeState.size = calculatedPips <= 40 ? '<=40' : '50+';
+            // Update UI without full re-render to prevent keyboard from closing
+            document.querySelectorAll('[data-zonesize]').forEach(el => {
+              const val = el.getAttribute('data-zonesize');
+              if (val === zoneSizeState.size) {
+                el.classList.add('selected');
+              } else {
+                el.classList.remove('selected');
+              }
+            });
           }
         }
-        renderStep();
         renderRail();
       });
     }
