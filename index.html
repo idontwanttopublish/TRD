@@ -3361,6 +3361,44 @@ function renderCharts(entries, stats) {
     },
     options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: baseAxisOpts() }
   });
+
+  // 7. Setup + timeframe wise Win / Loss — e.g. "BPE H1". Groups closed trades
+  // by setup type + the setup's timeframe field (falls back to "No TF" when
+  // the entry has no timeframe recorded), then stacks Win/Loss/Breakeven counts.
+  const tfGroups = {};
+  stats.closed.forEach(e => {
+    if (!e.setupType) return;
+    const tfField = (e.setupFields || []).find(f => /timeframe/i.test(f.label));
+    const tf = (tfField && tfField.value) ? tfField.value : 'No TF';
+    const setupLabel = (SETUP_TYPES[e.setupType] && SETUP_TYPES[e.setupType].label) || e.setupType;
+    const key = `${setupLabel} ${tf}`;
+    if (!tfGroups[key]) tfGroups[key] = { win: 0, loss: 0, breakeven: 0 };
+    tfGroups[key][e.outcome.status]++;
+  });
+  const tfKeys = Object.keys(tfGroups).sort((a, b) => {
+    const totalA = tfGroups[a].win + tfGroups[a].loss + tfGroups[a].breakeven;
+    const totalB = tfGroups[b].win + tfGroups[b].loss + tfGroups[b].breakeven;
+    return totalB - totalA;
+  });
+  const tfAxisOpts = baseAxisOpts();
+  chartInstances.bySetupTF = new Chart(document.getElementById('chartBySetupTF'), {
+    type: 'bar',
+    data: {
+      labels: tfKeys.length ? tfKeys : ['No closed trades yet'],
+      datasets: [
+        { label: 'Win', data: tfKeys.length ? tfKeys.map(k => tfGroups[k].win) : [0], backgroundColor: '#34C97F', borderRadius: 4, maxBarThickness: 34 },
+        { label: 'Loss', data: tfKeys.length ? tfKeys.map(k => tfGroups[k].loss) : [0], backgroundColor: '#F2565C', borderRadius: 4, maxBarThickness: 34 },
+        { label: 'Breakeven', data: tfKeys.length ? tfKeys.map(k => tfGroups[k].breakeven) : [0], backgroundColor: '#E8B34A', borderRadius: 4, maxBarThickness: 34 }
+      ]
+    },
+    options: {
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 12 } } },
+      scales: {
+        x: Object.assign({}, tfAxisOpts.x, { stacked: true }),
+        y: Object.assign({}, tfAxisOpts.y, { stacked: true, ticks: Object.assign({}, tfAxisOpts.y.ticks, { precision: 0 }) })
+      }
+    }
+  });
 }
 
 function outcomeTag(entry) {
@@ -3987,6 +4025,7 @@ function renderJournalDashboard() {
         <div class="chart-card"><div class="chart-title">Win rate by direction bias</div><canvas id="chartByBias"></canvas></div>
         <div class="chart-card"><div class="chart-title">Trades by day of week</div><canvas id="chartByDay"></canvas></div>
         <div class="chart-card full"><div class="chart-title">Grade distribution</div><canvas id="chartByGrade"></canvas></div>
+        <div class="chart-card full"><div class="chart-title">Setup + timeframe wise win / loss (e.g. BPE H1)</div><canvas id="chartBySetupTF"></canvas></div>
       </div>`;
     }
     body.innerHTML = html;
