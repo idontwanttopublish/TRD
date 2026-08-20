@@ -3463,6 +3463,37 @@ function renderCharts(entries, stats) {
       }
     }
   });
+
+  // 8. BPE — Historical vs CMP win rate. Groups closed BPE trades by their
+  // "Reference" field (Historical or CMP) and shows Win/Loss/Breakeven counts.
+  const refBuckets = { Historical: { win: 0, loss: 0, breakeven: 0 }, CMP: { win: 0, loss: 0, breakeven: 0 } };
+  stats.closed.forEach(e => {
+    if (e.setupType !== 'bpe') return;
+    const refField = (e.setupFields || []).find(f => /reference/i.test(f.label));
+    const ref = refField && refBuckets.hasOwnProperty(refField.value) ? refField.value : null;
+    if (!ref) return;
+    refBuckets[ref][e.outcome.status]++;
+  });
+  const refKeys = Object.keys(refBuckets);
+  const refCounts = refKeys.map(k => refBuckets[k].win + refBuckets[k].loss + refBuckets[k].breakeven);
+  chartInstances.bpeRef = new Chart(document.getElementById('chartBPERef'), {
+    type: 'bar',
+    data: {
+      labels: refKeys.map((k, i) => `${k} (${refCounts[i]})`),
+      datasets: [
+        { label: 'Win', data: refKeys.map(k => refBuckets[k].win), backgroundColor: '#34C97F', borderRadius: 4, maxBarThickness: 46 },
+        { label: 'Loss', data: refKeys.map(k => refBuckets[k].loss), backgroundColor: '#F2565C', borderRadius: 4, maxBarThickness: 46 },
+        { label: 'Breakeven', data: refKeys.map(k => refBuckets[k].breakeven), backgroundColor: '#E8B34A', borderRadius: 4, maxBarThickness: 46 }
+      ]
+    },
+    options: {
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 12 } } },
+      scales: {
+        x: Object.assign({}, tfAxisOpts.x, { stacked: true }),
+        y: Object.assign({}, tfAxisOpts.y, { stacked: true, ticks: Object.assign({}, tfAxisOpts.y.ticks, { precision: 0 }) })
+      }
+    }
+  });
 }
 
 function outcomeTag(entry) {
@@ -4092,6 +4123,7 @@ function renderJournalDashboard() {
         <div class="chart-card"><div class="chart-title">Trades by day of week</div><canvas id="chartByDay"></canvas></div>
         <div class="chart-card full"><div class="chart-title">Grade distribution</div><canvas id="chartByGrade"></canvas></div>
         <div class="chart-card full"><div class="chart-title">Setup + timeframe wise win / loss (e.g. BPE H1)</div><canvas id="chartBySetupTF"></canvas></div>
+        <div class="chart-card full"><div class="chart-title">BPE — Historical vs CMP win rate</div><canvas id="chartBPERef"></canvas></div>
       </div>`;
     }
     body.innerHTML = html;
