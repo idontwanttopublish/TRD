@@ -417,6 +417,21 @@
   .score-badge.good { background: #241D0E; color: #E8B34A; border: 1px solid #4A3C18; }
   .score-badge.aplus { background: #10201A; color: #34C97F; border: 1px solid #1F4A38; }
 
+  .wr-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 8px;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+  .wr-badge-n { font-weight: 500; opacity: 0.75; }
+  .wr-badge.wr-good { background: #10201A; color: #34C97F; border: 1px solid #1F4A38; }
+  .wr-badge.wr-mid { background: #241D0E; color: #E8B34A; border: 1px solid #4A3C18; }
+  .wr-badge.wr-bad { background: #201113; color: #F2565C; border: 1px solid #4A1E22; }
+  .wr-badge.wr-none { background: #14181F; color: #5B6472; border: 1px solid #262B35; }
+
   .score-row { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; color: #B9C0CC; padding: 5px 0; }
   .score-row-pts { font-family: 'JetBrains Mono', monospace; color: #8A93A3; }
   .score-row-pts.earned { color: #34C97F; }
@@ -2836,11 +2851,24 @@ function renderManageView() {
     e.status !== 'closed'
   );
   
-  // Sort: open first, then marked
+  // Attach each trade's historical win rate for its setup + timeframe combo,
+  // so the row badge and the sort order below are always based on the same data.
+  const tfWinRates = setupTFWinRateMap();
+  entries.forEach(e => {
+    const key = setupTFKey(e);
+    e._tfKey = key;
+    e._tfStat = key ? tfWinRates[key] : null;
+  });
+  
+  // Sort: live (open) positions first since they need the most attention,
+  // then order by the historical win rate of each trade's setup + timeframe —
+  // best-performing combos first. Combos with no history sort to the back.
   const sortedEntries = entries.slice().sort((a, b) => {
     if (a.status === 'open' && b.status !== 'open') return -1;
     if (a.status !== 'open' && b.status === 'open') return 1;
-    return 0;
+    const wrA = a._tfStat && a._tfStat.winRate !== null ? a._tfStat.winRate : -1;
+    const wrB = b._tfStat && b._tfStat.winRate !== null ? b._tfStat.winRate : -1;
+    return wrB - wrA;
   });
   
   updateManageNavCount();
@@ -3082,6 +3110,42 @@ function computeStats(entries) {
   }
 
   return { trades, closed, wins, losses, breakeven, open, openLive, marked, winRate, totalPnl, avgR, skipped, streak, streakType, pnlEntries };
+}
+
+// Setup + timeframe historical win-rate — same grouping as the Dashboard's
+// "Setup + timeframe wise win / loss" chart, reused by the Manage tab so a
+// trade's badge and sort position always agree with the chart.
+function setupTFKey(e) {
+  if (!e.setupType) return null;
+  const tfField = (e.setupFields || []).find(f => /timeframe/i.test(f.label));
+  const tf = (tfField && tfField.value) ? tfField.value : 'No TF';
+  const setupLabel = (SETUP_TYPES[e.setupType] && SETUP_TYPES[e.setupType].label) || e.setupType;
+  return `${setupLabel} ${tf}`;
+}
+
+function setupTFWinRateMap() {
+  const closed = getJournal().filter(e => e.outcome && ['win', 'loss', 'breakeven'].includes(e.outcome.status));
+  const map = {};
+  closed.forEach(e => {
+    const key = setupTFKey(e);
+    if (!key) return;
+    if (!map[key]) map[key] = { win: 0, loss: 0, breakeven: 0 };
+    map[key][e.outcome.status]++;
+  });
+  Object.keys(map).forEach(k => {
+    const g = map[k];
+    const decided = g.win + g.loss;
+    g.total = g.win + g.loss + g.breakeven;
+    g.winRate = decided > 0 ? (g.win / decided) * 100 : null;
+  });
+  return map;
+}
+
+function winRateBadgeHTML(stat) {
+  if (!stat || stat.winRate === null) return `<span class="wr-badge wr-none">No history</span>`;
+  const pct = Math.round(stat.winRate);
+  const cls = pct >= 60 ? 'wr-good' : (pct >= 40 ? 'wr-mid' : 'wr-bad');
+  return `<span class="wr-badge ${cls}">${pct}% WR <span class="wr-badge-n">(${stat.win}W-${stat.loss}L${stat.breakeven ? '-' + stat.breakeven + 'BE' : ''})</span></span>`;
 }
 
 function fmtNum(n, digits) {
@@ -3926,6 +3990,7 @@ function manageEntryDetailHTML(e) {
     <div class="kv-row"><span>Overall bias</span><span><span class="bias-pill ${(e.direction.biasCls || 'pending')}">${e.direction.biasLabel}</span></span></div>
     ${e.setupGrade ? `<div class="kv-row"><span>Grade</span><span>${e.setupGrade.label} · ${e.setupPoints} pts</span></div>` : ''}
     ${e.tradeScoreLabel ? `<div class="kv-row"><span>Score</span><span>${(e.tradeScore ?? 0)}/${(e.tradeScoreMax ?? '—')} (${e.tradeScoreLabel.label})</span></div>` : ''}
+    ${e._tfKey ? `<div class="kv-row"><span>${e._tfKey} history</span><span>${winRateBadgeHTML(e._tfStat)}</span></div>` : ''}
     <div class="kv-row"><span>Zone size</span><span>${zoneSizeLabel}</span></div>
   `;
 
@@ -3975,6 +4040,7 @@ function manageEntryRowHTML(e) {
             <span class="entry-symbol">${e.trade.symbol || 'Unnamed'}</span>
             ${e.side ? `<span class="tag ${e.side.toLowerCase()}">${e.side}</span>` : ''}
             ${e.tradeScoreLabel ? `<span class="score-badge ${e.tradeScoreLabel.cls}" style="padding:2px 8px;font-size:11px;">${e.tradeScoreLabel.label}</span>` : ''}
+            ${e._tfKey ? winRateBadgeHTML(e._tfStat) : ''}
             ${e.verdict === 'GO' ? outcomeTag(e) : ''}
           </div>
           <div class="entry-meta">${e.date} · ${e.day} · ${e.time} · ${e.setupTypeLabel || 'no setup'}${e.setupGrade ? ' · ' + e.setupGrade.label : ''}${e.trade.entryPrice !== null && e.trade.entryPrice !== undefined ? ' · Entry ' + e.trade.entryPrice : ''}</div>
