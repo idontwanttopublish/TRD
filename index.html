@@ -1948,8 +1948,17 @@ function renderStep() {
       const pZoneEnd = parseFloat(precisedZoneState.zoneEnd);
       let pCalculatedPips = null;
       if (!isNaN(pZoneStart) && !isNaN(pZoneEnd)) {
-        const diff = Math.abs(pZoneStart - pZoneEnd);
-        pCalculatedPips = diff;
+        // Check if both inputs are 4-digit numbers
+        const is4DigitStart = precisedZoneState.zoneStart.length === 4;
+        const is4DigitEnd = precisedZoneState.zoneEnd.length === 4;
+
+        if (is4DigitStart && is4DigitEnd) {
+          // For 4-digit inputs, calculate difference and multiply by 10
+          const diff = Math.abs(pZoneStart - pZoneEnd);
+          pCalculatedPips = diff * 10;
+        } else {
+          pCalculatedPips = Math.abs(pZoneStart - pZoneEnd);
+        }
       }
       
       if (pCalculatedPips !== null && pCalculatedPips >= 0) {
@@ -3314,7 +3323,17 @@ function entryDetailHTML(e) {
     ? (() => {
         const pzStart = parseFloat(e.precisedZone.zoneStart);
         const pzEnd = parseFloat(e.precisedZone.zoneEnd);
-        const pips = !isNaN(pzStart) && !isNaN(pzEnd) ? Math.abs(pzStart - pzEnd).toFixed(1) : '—';
+        // Check if both inputs are 4-digit numbers for pip calculation
+        const is4DigitStart = String(e.precisedZone.zoneStart).length === 4;
+        const is4DigitEnd = String(e.precisedZone.zoneEnd).length === 4;
+        let pips = '—';
+        if (!isNaN(pzStart) && !isNaN(pzEnd)) {
+          if (is4DigitStart && is4DigitEnd) {
+            pips = (Math.abs(pzStart - pzEnd) * 10).toFixed(1);
+          } else {
+            pips = Math.abs(pzStart - pzEnd).toFixed(1);
+          }
+        }
         return `<div class="kv-row"><span>Precised Zone Start</span><span>${e.precisedZone.zoneStart}</span></div>
                 <div class="kv-row"><span>Precised Zone End</span><span>${e.precisedZone.zoneEnd}</span></div>
                 <div class="kv-row"><span>Precised Zone Size</span><span>${pips} pips</span></div>`;
@@ -3503,11 +3522,20 @@ function entryDetailHTML(e) {
   if ((e.status === 'marked' || (e.status === 'open' && !e.outcome?.status)) && e.precisedZone && e.precisedZone.zoneStart && e.precisedZone.zoneEnd) {
     const pzStart = parseFloat(e.precisedZone.zoneStart);
     const pzEnd = parseFloat(e.precisedZone.zoneEnd);
+    // Check if both inputs are 4-digit numbers for pip calculation
+    const is4DigitStart = String(e.precisedZone.zoneStart).length === 4;
+    const is4DigitEnd = String(e.precisedZone.zoneEnd).length === 4;
+    let pips = 0;
     if (!isNaN(pzStart) && !isNaN(pzEnd)) {
-      const pips = Math.abs(pzStart - pzEnd);
-      const hasTLConfluence = e.confluence && e.confluence.types && e.confluence.types.includes('tl');
-      
-      if (pips >= 100) {
+      if (is4DigitStart && is4DigitEnd) {
+        pips = Math.abs(pzStart - pzEnd) * 10;
+      } else {
+        pips = Math.abs(pzStart - pzEnd);
+      }
+    }
+    const hasTLConfluence = e.confluence && e.confluence.types && e.confluence.types.includes('tl');
+    
+    if (pips >= 100) {
         suggestionHTML = `
           <div class="suggestion-box large-zone">
             <div class="suggestion-icon"><i class="ti ti-alert-triangle" aria-hidden="true"></i></div>
