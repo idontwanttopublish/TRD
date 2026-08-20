@@ -2779,7 +2779,7 @@ function updateNavCount() {
 function updateManageNavCount() {
   const el = document.getElementById('manageNavCount');
   if (!el) return;
-  const entries = getJournal().filter(e => e.verdict === 'GO' && (!e.outcome || !['win', 'loss', 'breakeven'].includes(e.outcome.status)));
+  const entries = getJournal().filter(e => e.verdict === 'GO' && e.status !== 'closed');
   const n = entries.length;
   el.textContent = n > 0 ? String(n) : '';
 }
@@ -2788,10 +2788,10 @@ function renderManageView() {
   const toolbar = document.getElementById('manageToolbar');
   const body = document.getElementById('manageBody');
   
-  // Get all marked and open trades
+  // Get all trades that aren't closed yet (open or marked, regardless of outcome)
   const entries = getJournal().filter(e => 
     e.verdict === 'GO' && 
-    (!e.outcome || !['win', 'loss', 'breakeven'].includes(e.outcome.status))
+    e.status !== 'closed'
   );
   
   // Sort: open first, then marked
@@ -2834,6 +2834,23 @@ function renderManageView() {
     el.addEventListener('click', () => {
       el.parentElement.querySelectorAll('[data-detail-status]').forEach(c => c.classList.remove('selected'));
       el.classList.add('selected');
+      const status = el.getAttribute('data-detail-status');
+      const detailEl = el.closest('.entry-detail');
+      if (detailEl) {
+        const show = status !== 'marked';
+        const entryStopWrap = detailEl.querySelector('[data-manage-entrystop]');
+        const outcomeWrap = detailEl.querySelector('[data-manage-outcome-wrap]');
+        if (entryStopWrap) entryStopWrap.style.display = show ? '' : 'none';
+        if (outcomeWrap) outcomeWrap.style.display = show ? '' : 'none';
+      }
+    });
+  });
+  
+  body.querySelectorAll('[data-cf-toggle]').forEach(el => {
+    el.addEventListener('click', () => {
+      const id = el.getAttribute('data-cf-toggle');
+      manageConfluenceExpanded[id] = !manageConfluenceExpanded[id];
+      renderManageView();
     });
   });
   
@@ -2932,6 +2949,7 @@ function renderManageView() {
 let journalFilters = { range: 'all', setup: 'all', side: 'all', outcome: 'all' };
 let expandedEntryId = null;
 let journalEditConfluence = {};
+let manageConfluenceExpanded = {};
 let journalSubView = 'dashboard';
 
 function getJournalEditConfluence(e) {
@@ -3725,9 +3743,65 @@ function tradeSuggestionHTML(e) {
 
 // Lightweight summary detail used only on the Manage page — overall bias
 // instead of the full direction breakdown, plus the execution suggestion.
+// Manage-only Trade details block: Symbol and Profit target always show;
+// Entry price and Stop loss stay hidden until the trade isn't just "Marked"
+// (status is Open or Closed) — toggled live by the status chip handler.
+function buildManageTradeEditHTML(e, locked) {
+  const showEntryStop = e.status !== 'marked';
+  return locked ? `
+    <div class="kv-grid">
+      <div class="kv-row"><span>Status</span><span>Closed</span></div>
+      <div class="kv-row"><span>Symbol</span><span>${e.trade.symbol || '—'}</span></div>
+      <div class="kv-row"><span>Entry price</span><span>${e.trade.entryPrice ?? '—'}</span></div>
+      <div class="kv-row"><span>Stop loss</span><span>${e.trade.stopLoss ?? '—'}</span></div>
+      <div class="kv-row"><span>Profit target</span><span>${e.trade.takeProfit ?? '—'}</span></div>
+    </div>
+    ${e.trade.notes ? `<div class="field-note" style="margin-top:8px;">${e.trade.notes}</div>` : ''}
+  ` : `
+    <div class="form-grid">
+      <input class="form-input" placeholder="Symbol / pair" data-tfield="symbol" value="${e.trade.symbol || ''}">
+      <input class="form-input span-2" type="number" step="any" placeholder="Profit target" data-tfield="takeProfit" value="${e.trade.takeProfit ?? ''}">
+    </div>
+    <div class="form-grid" data-manage-entrystop style="${showEntryStop ? '' : 'display:none;'}">
+      <input class="form-input" type="number" step="any" placeholder="Entry price" data-tfield="entryPrice" value="${e.trade.entryPrice ?? ''}">
+      <input class="form-input" type="number" step="any" placeholder="Stop loss" data-tfield="stopLoss" value="${e.trade.stopLoss ?? ''}">
+    </div>
+    <textarea class="form-input" rows="2" placeholder="Notes (optional)" data-tfield="notes">${e.trade.notes || ''}</textarea>
+  `;
+}
+
+// Manage-only Outcome block: no pre-selected "Marked/Open" placeholder value
+// — the select always opens on a real, unselectable "Select result…" option.
+function buildManageOutcomeEditHTML(e, locked) {
+  const o = e.outcome || {};
+  return locked ? `
+    <div class="kv-grid">
+      <div class="kv-row"><span>Result</span><span>${o.status || '—'}</span></div>
+      <div class="kv-row"><span>Exit price</span><span>${o.exitPrice ?? '—'}</span></div>
+      <div class="kv-row"><span>P/L amount</span><span>${o.pnl ?? '—'}</span></div>
+    </div>
+    ${o.notes ? `<div class="field-note" style="margin-top:8px;">${o.notes}</div>` : ''}
+  ` : `
+    <div class="outcome-form">
+      <select class="form-input" data-outcome-field="status" data-id="${e.id}">
+        <option value="" ${!['win', 'loss', 'breakeven'].includes(o.status) ? 'selected' : ''} disabled>Select result…</option>
+        <option value="win" ${o.status === 'win' ? 'selected' : ''}>Win</option>
+        <option value="loss" ${o.status === 'loss' ? 'selected' : ''}>Loss</option>
+        <option value="breakeven" ${o.status === 'breakeven' ? 'selected' : ''}>Breakeven</option>
+      </select>
+      <input class="form-input" type="number" step="any" placeholder="Exit price" data-outcome-field="exitPrice" data-id="${e.id}" value="${o.exitPrice ?? ''}">
+      <input class="form-input span-2" type="number" step="any" placeholder="P/L amount" data-outcome-field="pnl" data-id="${e.id}" value="${o.pnl ?? ''}">
+      <textarea class="form-input span-2" rows="2" placeholder="Outcome notes" data-outcome-field="notes" data-id="${e.id}">${o.notes || ''}</textarea>
+      ${e.status === 'closed' ? `<div class="field-note" style="margin-top:2px;">Pick Win, Loss, or Breakeven before saving a closed trade.</div>` : ''}
+    </div>
+  `;
+}
+
 function manageEntryDetailHTML(e) {
   const tfField = (e.setupFields || []).find(f => /timeframe/i.test(f.label));
   const locked = e.status === 'closed';
+  const showConditional = e.status !== 'marked';
+  const cfExpanded = !!manageConfluenceExpanded[e.id];
 
   const liveBannerHTML = (e.status === 'open') ? `
     <div class="live-banner">
@@ -3770,15 +3844,20 @@ function manageEntryDetailHTML(e) {
     </div>
     <div class="detail-section">
       <div class="detail-heading">Trade details ${locked ? '' : '<span style="font-weight:400;color:#5B6472;font-size:12px;">(editable)</span>'}</div>
-      ${buildTradeEditHTML(e, locked)}
+      ${buildManageTradeEditHTML(e, locked)}
     </div>
     <div class="detail-section">
-      <div class="detail-heading">Confluence ${locked ? '' : '<span style="font-weight:400;color:#5B6472;font-size:12px;">(editable)</span>'}</div>
-      ${buildConfluenceEditHTML(e, locked)}
+      <div class="detail-heading confluence-collapse-heading" data-cf-toggle="${e.id}" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;">
+        <span>Confluence ${locked ? '' : '<span style="font-weight:400;color:#5B6472;font-size:12px;">(editable)</span>'}</span>
+        <i class="ti ${cfExpanded ? 'ti-chevron-up' : 'ti-chevron-down'}" aria-hidden="true"></i>
+      </div>
+      <div style="${cfExpanded ? '' : 'display:none;'}">
+        ${buildConfluenceEditHTML(e, locked)}
+      </div>
     </div>
-    <div class="detail-section">
+    <div class="detail-section" data-manage-outcome-wrap style="${showConditional ? '' : 'display:none;'}">
       <div class="detail-heading">Outcome</div>
-      ${buildOutcomeEditHTML(e, locked)}
+      ${buildManageOutcomeEditHTML(e, locked)}
     </div>
     ${buildStatusEditHTML(e, locked)}
     <div class="entry-actions">
