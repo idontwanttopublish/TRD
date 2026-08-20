@@ -2456,7 +2456,7 @@ function renderVerdict() {
 
   html += `<div class="reminder-block">
     <div class="reminder-title">On the way out</div>
-    <div class="reminder-row"><span>Take profit</span><span>Next opposite setup / roadblock / fresh ISL</span></div>
+    <div class="reminder-row"><span>Profit target</span><span>Next opposite setup / roadblock / fresh ISL</span></div>
     <div class="reminder-row"><span>Cut loss</span><span>Body candle break or confluence fail</span></div>
     <div class="reminder-row"><span>Stop loss</span><span>10–20 pips beyond zone</span></div>
   </div>`;
@@ -2474,7 +2474,7 @@ function renderVerdict() {
         <input class="form-input" type="number" step="any" id="saveEntryPriceInput" placeholder="Entry price" value="${pendingSaveEntryPrice}">
         <input class="form-input" type="number" step="any" id="saveSLInput" placeholder="SL price" value="${pendingSaveSL}">
       </div>
-      <div class="field-note" style="margin-bottom:10px;">Take profit, risk %, and confluence can all be filled in later from the journal page.</div>
+      <div class="field-note" style="margin-bottom:10px;">Profit target, risk %, and confluence can all be filled in later from the journal page.</div>
       <button class="btn-next go" id="saveJournalBtn" style="width:100%;">Save</button>
     </div>`;
   } else {
@@ -2769,9 +2769,11 @@ function buildJournalEntry(verdictType, statusValue, symbolValue, tradeOverrides
 
 function updateNavCount() {
   const el = document.getElementById('navCount');
-  if (!el) return;
-  const n = getJournal().length;
-  el.textContent = n > 0 ? String(n) : '';
+  if (el) {
+    const n = getJournal().length;
+    el.textContent = n > 0 ? String(n) : '';
+  }
+  updateManageNavCount();
 }
 
 function updateManageNavCount() {
@@ -2806,12 +2808,12 @@ function renderManageView() {
     return;
   }
   
-  body.innerHTML = `<div class="entry-list">${sortedEntries.map(entryRowHTML).join('')}</div>`;
+  body.innerHTML = `<div class="entry-list">${sortedEntries.map(manageEntryRowHTML).join('')}</div>`;
   
   body.querySelectorAll('[data-toggle-entry]').forEach(el => {
     el.addEventListener('click', () => {
       const id = el.getAttribute('data-toggle-entry');
-      if (expandedEntryId === id) delete journalEditConfluence[id];
+      if (expandedEntryId !== id) delete journalEditConfluence[id];
       expandedEntryId = expandedEntryId === id ? null : id;
       renderManageView();
     });
@@ -2867,41 +2869,46 @@ function renderManageView() {
       const status = statusChip ? statusChip.getAttribute('data-detail-status') : 'marked';
       
       const trade = {};
+      container.querySelectorAll('[data-tfield]').forEach(field => {
+        const key = field.getAttribute('data-tfield');
+        let val = field.value;
+        if (['entryPrice', 'stopLoss', 'takeProfit'].includes(key)) {
+          val = val === '' ? null : parseFloat(val);
+        } else {
+          val = val.trim();
+        }
+        trade[key] = val;
+      });
+      
+      const cs = journalEditConfluence[id];
+      const confluence = cs ? JSON.parse(JSON.stringify(cs)) : { types: [], hns: {}, tlMode: null, tl1: {}, tl2: {} };
+      
       const outcome = {};
-      
-      container.querySelectorAll('[data-trade-field]').forEach(inp => {
-        const f = inp.getAttribute('data-trade-field');
-        let v = inp.value.trim();
-        if (f === 'entryPrice' || f === 'stopLoss' || f === 'targetPrice') {
-          v = v === '' ? null : +v;
+      container.querySelectorAll('[data-outcome-field]').forEach(field => {
+        const key = field.getAttribute('data-outcome-field');
+        let val = field.value;
+        if (key === 'exitPrice' || key === 'pnl') {
+          val = val === '' ? null : parseFloat(val);
         }
-        trade[f] = v;
+        outcome[key] = val;
       });
       
-      container.querySelectorAll('[data-outcome-field]').forEach(inp => {
-        const f = inp.getAttribute('data-outcome-field');
-        let v = inp.value.trim();
-        if (f === 'exitPrice' || f === 'pnl' || f === 'rMultiple') {
-          v = v === '' ? null : +v;
+      if (status === 'closed') {
+        if (!['win', 'loss', 'breakeven'].includes(outcome.status)) {
+          alert('Pick Win, Loss, or Breakeven in Outcome before saving this trade as Closed.');
+          return;
         }
-        outcome[f] = v;
-      });
-      
-      const detailsContainer = container.querySelector('.entry-detail');
-      const notesEl = detailsContainer.querySelector('[data-outcome-field="notes"]');
-      outcome.notes = notesEl ? notesEl.value : '';
-      
-      const patch = { trade, status };
-      if (status === 'open' || outcome.exitPrice !== null) {
-        patch.outcome = Object.assign({}, outcome, {
-          status: status === 'open' ? 'open' : (outcome.exitPrice !== null ? outcome.status : 'marked'),
-          closedAt: outcome.exitPrice !== null ? Date.now() : null
-        });
+      } else {
+        if (!['win', 'loss', 'breakeven'].includes(outcome.status)) {
+          outcome.status = status;
+        }
       }
+      if (['win', 'loss', 'breakeven'].includes(outcome.status)) outcome.closedAt = new Date().toISOString();
+      else outcome.closedAt = null;
       
-      updateJournalEntry(id, patch);
-      expandedEntryId = null;
+      updateJournalEntry(id, { status, trade, confluence, outcome });
       delete journalEditConfluence[id];
+      expandedEntryId = null;
       renderManageView();
       updateNavCount();
     });
@@ -3302,6 +3309,162 @@ function outcomeTag(entry) {
   return `<span class="tag ${o.status || 'open'}">${label}</span>`;
 }
 
+function confluenceSummaryHTML(c) {
+  const cTypes = c.types || [];
+  if (!cTypes.length) return `<div class="kv-row"><span>Confluence</span><span>None selected</span></div>`;
+  let rows = '';
+  if (cTypes.includes('hns')) {
+    rows += `<div class="kv-row"><span>HNS timeframe</span><span>${(c.hns && c.hns.timeframe) || '—'}</span></div>`;
+    rows += `<div class="kv-row"><span>HNS fresh</span><span>${(c.hns && c.hns.fresh) || '—'}</span></div>`;
+  }
+  if (cTypes.includes('tl')) {
+    rows += `<div class="kv-row"><span>TL mode</span><span>${c.tlMode || '—'}</span></div>`;
+    rows += `<div class="kv-row"><span>TL 1</span><span>${(c.tl1 && c.tl1.timeframe) || '—'} / ${(c.tl1 && c.tl1.type) || '—'}</span></div>`;
+    if (c.tlMode === 'kiss') {
+      rows += `<div class="kv-row"><span>TL 2</span><span>${(c.tl2 && c.tl2.timeframe) || '—'} / ${(c.tl2 && c.tl2.type) || '—'}</span></div>`;
+    }
+  }
+  return rows;
+}
+
+// Editable Confluence block — used by both the full Journal detail view and
+// the Manage summary view, so confluence controls behave identically everywhere.
+function buildConfluenceEditHTML(e, locked) {
+  if (locked) {
+    return `<div class="kv-grid">${confluenceSummaryHTML(e.confluence || {})}</div>`;
+  }
+  const cs = getJournalEditConfluence(e);
+  let h = `<div class="editable-confluence" data-details-id="${e.id}">`;
+  h += `<div class="dir-field-label" style="margin-bottom:9px;">Confluence type</div>`;
+  h += `<div class="chip-select" style="margin-bottom:16px;">`;
+  [{ val: 'hns', label: 'HNS SNR' }, { val: 'tl', label: 'TL' }].forEach(opt => {
+    const sel = cs.types.includes(opt.val) ? 'selected' : '';
+    h += `<div class="chip-option ${sel}" data-cf-group="type" data-cf-field="type" data-cf-val="${opt.val}">${opt.label}</div>`;
+  });
+  h += `</div>`;
+
+  if (cs.types.includes('hns')) {
+    h += `<div class="setup-detail-title">HNS SNR</div>`;
+    h += `<div class="dir-field"><div class="dir-field-label">Which timeframe</div><div class="chip-select">`;
+    TF_OPTIONS.forEach(tf => {
+      const sel = cs.hns.timeframe === tf ? 'selected' : '';
+      h += `<div class="chip-option ${sel}" data-cf-group="hns" data-cf-field="timeframe" data-cf-val="${tf}">${tf}</div>`;
+    });
+    h += `</div></div>`;
+    h += `<div class="dir-field"><div class="dir-field-label">Fresh</div><div class="chip-select">`;
+    ['Yes', 'No'].forEach(v => {
+      const sel = cs.hns.fresh === v ? 'selected' : '';
+      h += `<div class="chip-option ${sel}" data-cf-group="hns" data-cf-field="fresh" data-cf-val="${v}">${v}</div>`;
+    });
+    h += `</div></div>`;
+  }
+
+  if (cs.types.includes('tl')) {
+    h += `<div class="setup-detail-title" style="margin-top:6px;">TL</div>`;
+    h += `<div class="dir-field"><div class="dir-field-label">KISS or single</div><div class="chip-select">`;
+    [{ val: 'kiss', label: 'KISS' }, { val: 'single', label: 'Single' }].forEach(opt => {
+      const sel = cs.tlMode === opt.val ? 'selected' : '';
+      h += `<div class="chip-option ${sel}" data-cf-group="tlMode" data-cf-field="tlMode" data-cf-val="${opt.val}">${opt.label}</div>`;
+    });
+    h += `</div></div>`;
+
+    const tlBlock = (title, key) => {
+      const data = cs[key];
+      let th = `<div class="dir-field-label" style="margin-top:14px;">${title}</div>`;
+      th += `<div class="dir-field"><div class="dir-field-label" style="font-size:12px;color:#5B6472;">Timeframe</div><div class="chip-select">`;
+      TF_OPTIONS_TL.forEach(tf => {
+        const sel = data.timeframe === tf ? 'selected' : '';
+        th += `<div class="chip-option ${sel}" data-cf-group="${key}" data-cf-field="timeframe" data-cf-val="${tf}">${tf}</div>`;
+      });
+      th += `</div></div>`;
+      th += `<div class="dir-field"><div class="dir-field-label" style="font-size:12px;color:#5B6472;">Type</div><div class="field-note" style="margin:4px 0 8px;">${TL_TYPE_NOTE}</div><div class="chip-select">`;
+      TL_TYPES.forEach(t => {
+        const sel = data.type === t ? 'selected' : '';
+        th += `<div class="chip-option ${sel}" data-cf-group="${key}" data-cf-field="type" data-cf-val="${t}">${t}</div>`;
+      });
+      th += `</div></div>`;
+      return th;
+    };
+
+    if (cs.tlMode === 'kiss') {
+      h += tlBlock('TL 1', 'tl1');
+      h += tlBlock('TL 2', 'tl2');
+    } else if (cs.tlMode === 'single') {
+      h += tlBlock('TL', 'tl1');
+    }
+  }
+  h += `</div>`;
+  return h;
+}
+
+// Editable Trade details block — symbol, entry price, stop loss, profit
+// target, notes. Shared by the Journal detail view and the Manage summary view.
+function buildTradeEditHTML(e, locked) {
+  return locked ? `
+    <div class="kv-grid">
+      <div class="kv-row"><span>Status</span><span>Closed</span></div>
+      <div class="kv-row"><span>Symbol</span><span>${e.trade.symbol || '—'}</span></div>
+      <div class="kv-row"><span>Entry price</span><span>${e.trade.entryPrice ?? '—'}</span></div>
+      <div class="kv-row"><span>Stop loss</span><span>${e.trade.stopLoss ?? '—'}</span></div>
+      <div class="kv-row"><span>Profit target</span><span>${e.trade.takeProfit ?? '—'}</span></div>
+    </div>
+    ${e.trade.notes ? `<div class="field-note" style="margin-top:8px;">${e.trade.notes}</div>` : ''}
+  ` : `
+    <div class="form-grid">
+      <input class="form-input" placeholder="Symbol / pair" data-tfield="symbol" value="${e.trade.symbol || ''}">
+      <input class="form-input" type="number" step="any" placeholder="Entry price" data-tfield="entryPrice" value="${e.trade.entryPrice ?? ''}">
+      <input class="form-input" type="number" step="any" placeholder="Stop loss" data-tfield="stopLoss" value="${e.trade.stopLoss ?? ''}">
+      <input class="form-input span-2" type="number" step="any" placeholder="Profit target" data-tfield="takeProfit" value="${e.trade.takeProfit ?? ''}">
+    </div>
+    <textarea class="form-input" rows="2" placeholder="Notes (optional)" data-tfield="notes">${e.trade.notes || ''}</textarea>
+  `;
+}
+
+// Editable Outcome block — result, exit price, P/L. Shared by the Journal
+// detail view and the Manage summary view.
+function buildOutcomeEditHTML(e, locked) {
+  const o = e.outcome || {};
+  return locked ? `
+    <div class="kv-grid">
+      <div class="kv-row"><span>Result</span><span>${o.status || '—'}</span></div>
+      <div class="kv-row"><span>Exit price</span><span>${o.exitPrice ?? '—'}</span></div>
+      <div class="kv-row"><span>P/L amount</span><span>${o.pnl ?? '—'}</span></div>
+    </div>
+    ${o.notes ? `<div class="field-note" style="margin-top:8px;">${o.notes}</div>` : ''}
+  ` : `
+    <div class="outcome-form">
+      <select class="form-input" data-outcome-field="status" data-id="${e.id}">
+        ${e.status === 'closed'
+          ? `<option value="" ${!['win', 'loss', 'breakeven'].includes(o.status) ? 'selected' : ''} disabled>Select result…</option>`
+          : `<option value="${e.status || 'marked'}" ${!['win', 'loss', 'breakeven'].includes(o.status) ? 'selected' : ''}>${e.status === 'open' ? 'Open' : 'Marked'}</option>`
+        }
+        <option value="win" ${o.status === 'win' ? 'selected' : ''}>Win</option>
+        <option value="loss" ${o.status === 'loss' ? 'selected' : ''}>Loss</option>
+        <option value="breakeven" ${o.status === 'breakeven' ? 'selected' : ''}>Breakeven</option>
+      </select>
+      <input class="form-input" type="number" step="any" placeholder="Exit price" data-outcome-field="exitPrice" data-id="${e.id}" value="${o.exitPrice ?? ''}">
+      <input class="form-input span-2" type="number" step="any" placeholder="P/L amount" data-outcome-field="pnl" data-id="${e.id}" value="${o.pnl ?? ''}">
+      <textarea class="form-input span-2" rows="2" placeholder="Outcome notes" data-outcome-field="notes" data-id="${e.id}">${o.notes || ''}</textarea>
+      ${e.status === 'closed' ? `<div class="field-note" style="margin-top:2px;">Pick Win, Loss, or Breakeven before saving a closed trade.</div>` : ''}
+    </div>
+  `;
+}
+
+// Editable Status chips — Marked / Open / Closed. Shared by the Journal
+// detail view and the Manage summary view.
+function buildStatusEditHTML(e, locked) {
+  return locked ? '' : `
+    <div class="detail-section">
+      <div class="detail-heading">Status</div>
+      <div class="chip-select">
+        <div class="chip-option status-marked ${(e.status || 'marked') === 'marked' ? 'selected' : ''}" data-detail-status="marked">Marked</div>
+        <div class="chip-option status-open ${e.status === 'open' ? 'selected' : ''}" data-detail-status="open">Open</div>
+        <div class="chip-option status-closed ${e.status === 'closed' ? 'selected' : ''}" data-detail-status="closed">Closed</div>
+      </div>
+    </div>
+  `;
+}
+
 function entryDetailHTML(e) {
   const dirRows = `
     <div class="kv-row"><span>Overall bias</span><span><span class="bias-pill ${(e.direction.biasCls || 'pending')}">${e.direction.biasLabel}</span></span></div>
@@ -3351,149 +3514,12 @@ function entryDetailHTML(e) {
 
   const checksHTML = (list) => list.map(c => `<div class="check-mini ${c.done ? 'yes' : 'no'}"><i class="ti ${c.done ? 'ti-check' : 'ti-x'}" aria-hidden="true"></i>${c.label}</div>`).join('');
 
-  const o = e.outcome || {};
   const locked = e.status === 'closed';
 
-  const confluenceSummaryHTML = (c) => {
-    const cTypes = c.types || [];
-    if (!cTypes.length) return `<div class="kv-row"><span>Confluence</span><span>None selected</span></div>`;
-    let rows = '';
-    if (cTypes.includes('hns')) {
-      rows += `<div class="kv-row"><span>HNS timeframe</span><span>${(c.hns && c.hns.timeframe) || '—'}</span></div>`;
-      rows += `<div class="kv-row"><span>HNS fresh</span><span>${(c.hns && c.hns.fresh) || '—'}</span></div>`;
-    }
-    if (cTypes.includes('tl')) {
-      rows += `<div class="kv-row"><span>TL mode</span><span>${c.tlMode || '—'}</span></div>`;
-      rows += `<div class="kv-row"><span>TL 1</span><span>${(c.tl1 && c.tl1.timeframe) || '—'} / ${(c.tl1 && c.tl1.type) || '—'}</span></div>`;
-      if (c.tlMode === 'kiss') {
-        rows += `<div class="kv-row"><span>TL 2</span><span>${(c.tl2 && c.tl2.timeframe) || '—'} / ${(c.tl2 && c.tl2.type) || '—'}</span></div>`;
-      }
-    }
-    return rows;
-  };
-
-  let confluenceEditHTML;
-  if (locked) {
-    confluenceEditHTML = `<div class="kv-grid">${confluenceSummaryHTML(e.confluence || {})}</div>`;
-  } else {
-    const cs = getJournalEditConfluence(e);
-    let h = `<div class="editable-confluence" data-details-id="${e.id}">`;
-    h += `<div class="dir-field-label" style="margin-bottom:9px;">Confluence type</div>`;
-    h += `<div class="chip-select" style="margin-bottom:16px;">`;
-    [{ val: 'hns', label: 'HNS SNR' }, { val: 'tl', label: 'TL' }].forEach(opt => {
-      const sel = cs.types.includes(opt.val) ? 'selected' : '';
-      h += `<div class="chip-option ${sel}" data-cf-group="type" data-cf-field="type" data-cf-val="${opt.val}">${opt.label}</div>`;
-    });
-    h += `</div>`;
-
-    if (cs.types.includes('hns')) {
-      h += `<div class="setup-detail-title">HNS SNR</div>`;
-      h += `<div class="dir-field"><div class="dir-field-label">Which timeframe</div><div class="chip-select">`;
-      TF_OPTIONS.forEach(tf => {
-        const sel = cs.hns.timeframe === tf ? 'selected' : '';
-        h += `<div class="chip-option ${sel}" data-cf-group="hns" data-cf-field="timeframe" data-cf-val="${tf}">${tf}</div>`;
-      });
-      h += `</div></div>`;
-      h += `<div class="dir-field"><div class="dir-field-label">Fresh</div><div class="chip-select">`;
-      ['Yes', 'No'].forEach(v => {
-        const sel = cs.hns.fresh === v ? 'selected' : '';
-        h += `<div class="chip-option ${sel}" data-cf-group="hns" data-cf-field="fresh" data-cf-val="${v}">${v}</div>`;
-      });
-      h += `</div></div>`;
-    }
-
-    if (cs.types.includes('tl')) {
-      h += `<div class="setup-detail-title" style="margin-top:6px;">TL</div>`;
-      h += `<div class="dir-field"><div class="dir-field-label">KISS or single</div><div class="chip-select">`;
-      [{ val: 'kiss', label: 'KISS' }, { val: 'single', label: 'Single' }].forEach(opt => {
-        const sel = cs.tlMode === opt.val ? 'selected' : '';
-        h += `<div class="chip-option ${sel}" data-cf-group="tlMode" data-cf-field="tlMode" data-cf-val="${opt.val}">${opt.label}</div>`;
-      });
-      h += `</div></div>`;
-
-      const tlBlock = (title, key) => {
-        const data = cs[key];
-        let th = `<div class="dir-field-label" style="margin-top:14px;">${title}</div>`;
-        th += `<div class="dir-field"><div class="dir-field-label" style="font-size:12px;color:#5B6472;">Timeframe</div><div class="chip-select">`;
-        TF_OPTIONS_TL.forEach(tf => {
-          const sel = data.timeframe === tf ? 'selected' : '';
-          th += `<div class="chip-option ${sel}" data-cf-group="${key}" data-cf-field="timeframe" data-cf-val="${tf}">${tf}</div>`;
-        });
-        th += `</div></div>`;
-        th += `<div class="dir-field"><div class="dir-field-label" style="font-size:12px;color:#5B6472;">Type</div><div class="field-note" style="margin:4px 0 8px;">${TL_TYPE_NOTE}</div><div class="chip-select">`;
-        TL_TYPES.forEach(t => {
-          const sel = data.type === t ? 'selected' : '';
-          th += `<div class="chip-option ${sel}" data-cf-group="${key}" data-cf-field="type" data-cf-val="${t}">${t}</div>`;
-        });
-        th += `</div></div>`;
-        return th;
-      };
-
-      if (cs.tlMode === 'kiss') {
-        h += tlBlock('TL 1', 'tl1');
-        h += tlBlock('TL 2', 'tl2');
-      } else if (cs.tlMode === 'single') {
-        h += tlBlock('TL', 'tl1');
-      }
-    }
-    h += `</div>`;
-    confluenceEditHTML = h;
-  }
-
-  const tradeEditHTML = locked ? `
-    <div class="kv-grid">
-      <div class="kv-row"><span>Status</span><span>Closed</span></div>
-      <div class="kv-row"><span>Symbol</span><span>${e.trade.symbol || '—'}</span></div>
-      <div class="kv-row"><span>Entry price</span><span>${e.trade.entryPrice ?? '—'}</span></div>
-      <div class="kv-row"><span>Stop loss</span><span>${e.trade.stopLoss ?? '—'}</span></div>
-      <div class="kv-row"><span>Take profit</span><span>${e.trade.takeProfit ?? '—'}</span></div>
-    </div>
-    ${e.trade.notes ? `<div class="field-note" style="margin-top:8px;">${e.trade.notes}</div>` : ''}
-  ` : `
-    <div class="form-grid">
-      <input class="form-input" placeholder="Symbol / pair" data-tfield="symbol" value="${e.trade.symbol || ''}">
-      <input class="form-input" type="number" step="any" placeholder="Entry price" data-tfield="entryPrice" value="${e.trade.entryPrice ?? ''}">
-      <input class="form-input" type="number" step="any" placeholder="Stop loss" data-tfield="stopLoss" value="${e.trade.stopLoss ?? ''}">
-      <input class="form-input span-2" type="number" step="any" placeholder="Take profit" data-tfield="takeProfit" value="${e.trade.takeProfit ?? ''}">
-    </div>
-    <textarea class="form-input" rows="2" placeholder="Notes (optional)" data-tfield="notes">${e.trade.notes || ''}</textarea>
-  `;
-
-  const outcomeHTML = locked ? `
-    <div class="kv-grid">
-      <div class="kv-row"><span>Result</span><span>${o.status || '—'}</span></div>
-      <div class="kv-row"><span>Exit price</span><span>${o.exitPrice ?? '—'}</span></div>
-      <div class="kv-row"><span>P/L amount</span><span>${o.pnl ?? '—'}</span></div>
-    </div>
-    ${o.notes ? `<div class="field-note" style="margin-top:8px;">${o.notes}</div>` : ''}
-  ` : `
-    <div class="outcome-form">
-      <select class="form-input" data-outcome-field="status" data-id="${e.id}">
-        ${e.status === 'closed'
-          ? `<option value="" ${!['win', 'loss', 'breakeven'].includes(o.status) ? 'selected' : ''} disabled>Select result…</option>`
-          : `<option value="${e.status || 'marked'}" ${!['win', 'loss', 'breakeven'].includes(o.status) ? 'selected' : ''}>${e.status === 'open' ? 'Open' : 'Marked'}</option>`
-        }
-        <option value="win" ${o.status === 'win' ? 'selected' : ''}>Win</option>
-        <option value="loss" ${o.status === 'loss' ? 'selected' : ''}>Loss</option>
-        <option value="breakeven" ${o.status === 'breakeven' ? 'selected' : ''}>Breakeven</option>
-      </select>
-      <input class="form-input" type="number" step="any" placeholder="Exit price" data-outcome-field="exitPrice" data-id="${e.id}" value="${o.exitPrice ?? ''}">
-      <input class="form-input span-2" type="number" step="any" placeholder="P/L amount" data-outcome-field="pnl" data-id="${e.id}" value="${o.pnl ?? ''}">
-      <textarea class="form-input span-2" rows="2" placeholder="Outcome notes" data-outcome-field="notes" data-id="${e.id}">${o.notes || ''}</textarea>
-      ${e.status === 'closed' ? `<div class="field-note" style="margin-top:2px;">Pick Win, Loss, or Breakeven before saving a closed trade.</div>` : ''}
-    </div>
-  `;
-
-  const statusHTML = locked ? '' : `
-    <div class="detail-section">
-      <div class="detail-heading">Status</div>
-      <div class="chip-select">
-        <div class="chip-option status-marked ${(e.status || 'marked') === 'marked' ? 'selected' : ''}" data-detail-status="marked">Marked</div>
-        <div class="chip-option status-open ${e.status === 'open' ? 'selected' : ''}" data-detail-status="open">Open</div>
-        <div class="chip-option status-closed ${e.status === 'closed' ? 'selected' : ''}" data-detail-status="closed">Closed</div>
-      </div>
-    </div>
-  `;
+  const confluenceEditHTML = buildConfluenceEditHTML(e, locked);
+  const tradeEditHTML = buildTradeEditHTML(e, locked);
+  const outcomeHTML = buildOutcomeEditHTML(e, locked);
+  const statusHTML = buildStatusEditHTML(e, locked);
 
   const liveBannerHTML = (e.status === 'open') ? `
     <div class="live-banner">
@@ -3639,6 +3665,150 @@ function entryRowHTML(e) {
         <i class="ti ti-chevron-right entry-chevron" aria-hidden="true"></i>
       </div>
       <div class="entry-detail">${expanded ? entryDetailHTML(e) : ''}</div>
+    </div>
+  `;
+}
+
+// Suggestion logic for marked zones with large precised zones — shared by
+// the full Journal detail view and the lightweight Manage summary view.
+function tradeSuggestionHTML(e) {
+  let suggestionHTML = '';
+  if ((e.status === 'marked' || (e.status === 'open' && !e.outcome?.status)) && e.precisedZone && e.precisedZone.zoneStart && e.precisedZone.zoneEnd) {
+    const pzStart = parseFloat(e.precisedZone.zoneStart);
+    const pzEnd = parseFloat(e.precisedZone.zoneEnd);
+    const is4DigitStart = String(e.precisedZone.zoneStart).length === 4;
+    const is4DigitEnd = String(e.precisedZone.zoneEnd).length === 4;
+    let pips = 0;
+    if (!isNaN(pzStart) && !isNaN(pzEnd)) {
+      if (is4DigitStart && is4DigitEnd) {
+        pips = Math.abs(pzStart - pzEnd) * 10;
+      } else {
+        pips = Math.abs(pzStart - pzEnd);
+      }
+    }
+    const hasTLConfluence = e.confluence && e.confluence.types && e.confluence.types.includes('tl');
+
+    if (pips >= 100) {
+      suggestionHTML = `
+        <div class="suggestion-box large-zone">
+          <div class="suggestion-icon"><i class="ti ti-alert-triangle" aria-hidden="true"></i></div>
+          <div class="suggestion-content">
+            <div class="suggestion-title">Large Zone (${pips.toFixed(1)} pips)</div>
+            <div class="suggestion-text">Wait for <strong>CMP HNS</strong> or <strong>BPE</strong> setup before entering. Zone is too wide for direct entry.</div>
+          </div>
+        </div>
+      `;
+    } else if (pips >= 50 && !hasTLConfluence) {
+      suggestionHTML = `
+        <div class="suggestion-box medium-zone">
+          <div class="suggestion-icon"><i class="ti ti-info-circle" aria-hidden="true"></i></div>
+          <div class="suggestion-content">
+            <div class="suggestion-title">Zone Size: ${pips.toFixed(1)} pips</div>
+            <div class="suggestion-text">Consider adding <strong>TL confluence</strong> for better entry precision, or wait for more confirmation.</div>
+          </div>
+        </div>
+      `;
+    } else if (pips >= 50 && hasTLConfluence) {
+      suggestionHTML = `
+        <div class="suggestion-box tl-ready">
+          <div class="suggestion-icon"><i class="ti ti-check-circle" aria-hidden="true"></i></div>
+          <div class="suggestion-content">
+            <div class="suggestion-title">Ready for TL Entry</div>
+            <div class="suggestion-text">TL confluence added. You can take entry from <strong>Trendline</strong> with proper risk management.</div>
+          </div>
+        </div>
+      `;
+    }
+  }
+  return suggestionHTML;
+}
+
+// Lightweight summary detail used only on the Manage page — overall bias
+// instead of the full direction breakdown, plus the execution suggestion.
+function manageEntryDetailHTML(e) {
+  const tfField = (e.setupFields || []).find(f => /timeframe/i.test(f.label));
+  const locked = e.status === 'closed';
+
+  const liveBannerHTML = (e.status === 'open') ? `
+    <div class="live-banner">
+      <span class="live-dot" aria-hidden="true"></span>
+      <span class="live-banner-text">Live position</span>
+      <span class="live-banner-sub">${e.trade.symbol || 'Unnamed'}${e.side ? ' · ' + e.side : ''}${e.trade.entryPrice !== null && e.trade.entryPrice !== undefined ? ' · Entry ' + e.trade.entryPrice : ''}</span>
+    </div>
+  ` : '';
+
+  const setupHighlightHTML = (e.setupTypeLabel || tfField) ? `
+    <div class="setup-highlight">
+      <div class="setup-highlight-left">
+        <div class="setup-highlight-label">Setup</div>
+        <div class="setup-highlight-name">${e.setupTypeLabel || 'None'}</div>
+      </div>
+      ${tfField ? `
+      <div class="setup-highlight-tf">
+        <div class="setup-highlight-tf-label">${tfField.label}</div>
+        <div class="setup-highlight-tf-badge">${tfField.value || '—'}</div>
+      </div>` : ''}
+    </div>
+  ` : '';
+
+  const zoneSizeLabel = e.zoneSize || '—';
+
+  const summaryRows = `
+    <div class="kv-row"><span>Overall bias</span><span><span class="bias-pill ${(e.direction.biasCls || 'pending')}">${e.direction.biasLabel}</span></span></div>
+    ${e.setupGrade ? `<div class="kv-row"><span>Grade</span><span>${e.setupGrade.label} · ${e.setupPoints} pts</span></div>` : ''}
+    ${e.tradeScoreLabel ? `<div class="kv-row"><span>Score</span><span>${(e.tradeScore ?? 0)}/${(e.tradeScoreMax ?? '—')} (${e.tradeScoreLabel.label})</span></div>` : ''}
+    <div class="kv-row"><span>Zone size</span><span>${zoneSizeLabel}</span></div>
+  `;
+
+  return `
+    ${liveBannerHTML}
+    ${setupHighlightHTML}
+    ${tradeSuggestionHTML(e)}
+    <div class="detail-section">
+      <div class="detail-heading">Summary</div>
+      <div class="kv-grid">${summaryRows}</div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-heading">Trade details ${locked ? '' : '<span style="font-weight:400;color:#5B6472;font-size:12px;">(editable)</span>'}</div>
+      ${buildTradeEditHTML(e, locked)}
+    </div>
+    <div class="detail-section">
+      <div class="detail-heading">Confluence ${locked ? '' : '<span style="font-weight:400;color:#5B6472;font-size:12px;">(editable)</span>'}</div>
+      ${buildConfluenceEditHTML(e, locked)}
+    </div>
+    <div class="detail-section">
+      <div class="detail-heading">Outcome</div>
+      ${buildOutcomeEditHTML(e, locked)}
+    </div>
+    ${buildStatusEditHTML(e, locked)}
+    <div class="entry-actions">
+      ${locked ? '' : `<button class="btn-next go" data-save-entry="${e.id}" style="flex:2;">Save</button>`}
+      <button class="btn-next reset" data-delete-entry="${e.id}" style="color:#F2565C;border-color:#4A1E22;">Delete</button>
+    </div>
+  `;
+}
+
+function manageEntryRowHTML(e) {
+  const expanded = expandedEntryId === e.id;
+  const isLive = e.status === 'open';
+  const canQuickOpen = e.status === 'marked';
+  return `
+    <div class="entry-row ${expanded ? 'expanded' : ''} ${isLive ? 'is-open' : ''}" data-entry-id="${e.id}">
+      <div class="entry-row-head" data-toggle-entry="${e.id}">
+        <div class="entry-row-main">
+          <div class="entry-row-top">
+            ${isLive ? `<span class="live-dot" aria-hidden="true"></span>` : ''}
+            <span class="entry-symbol">${e.trade.symbol || 'Unnamed'}</span>
+            ${e.side ? `<span class="tag ${e.side.toLowerCase()}">${e.side}</span>` : ''}
+            ${e.tradeScoreLabel ? `<span class="score-badge ${e.tradeScoreLabel.cls}" style="padding:2px 8px;font-size:11px;">${e.tradeScoreLabel.label}</span>` : ''}
+            ${e.verdict === 'GO' ? outcomeTag(e) : ''}
+          </div>
+          <div class="entry-meta">${e.date} · ${e.day} · ${e.time} · ${e.setupTypeLabel || 'no setup'}${e.setupGrade ? ' · ' + e.setupGrade.label : ''}${e.trade.entryPrice !== null && e.trade.entryPrice !== undefined ? ' · Entry ' + e.trade.entryPrice : ''}</div>
+        </div>
+        ${canQuickOpen ? `<button type="button" class="quick-open-btn" data-quick-open="${e.id}" title="Mark as Open"><i class="ti ti-player-play" aria-hidden="true"></i>Open</button>` : ''}
+        <i class="ti ti-chevron-right entry-chevron" aria-hidden="true"></i>
+      </div>
+      <div class="entry-detail">${expanded ? manageEntryDetailHTML(e) : ''}</div>
     </div>
   `;
 }
