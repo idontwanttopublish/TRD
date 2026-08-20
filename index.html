@@ -1053,6 +1053,28 @@
   }
   .live-banner-sub { font-size: 11px; color: #8A93A3; margin-left: auto; }
 
+  .session-alert {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    padding: 12px 14px;
+    border: 1px solid #F2565C;
+    background: linear-gradient(135deg, rgba(242,86,92,0.16), rgba(242,86,92,0.03));
+    border-radius: 12px;
+    box-shadow: 0 0 14px rgba(242,86,92,0.2);
+  }
+  .session-alert i { font-size: 18px; color: #F2565C; flex-shrink: 0; }
+  .session-alert-text {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #F2565C;
+  }
+  .session-alert-sub { font-size: 11px; color: #C77C80; margin-top: 1px; }
+
   .entry-chevron { color: #5B6472; font-size: 16px; transition: transform 0.15s ease; flex-shrink: 0; }
   .entry-row.expanded .entry-chevron { transform: rotate(90deg); }
 
@@ -2784,6 +2806,26 @@ function updateManageNavCount() {
   el.textContent = n > 0 ? String(n) : '';
 }
 
+// Session window matches the header clock/progress bar: 10:00–22:00.
+function isOutsideSession() {
+  const now = new Date();
+  const curMin = now.getHours() * 60 + now.getMinutes();
+  return curMin < 10 * 60 || curMin >= 22 * 60;
+}
+
+function sessionAlertHTML() {
+  if (!isOutsideSession()) return '';
+  return `
+    <div class="session-alert">
+      <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+      <div>
+        <div class="session-alert-text">Red Alert — Outside Session</div>
+        <div class="session-alert-sub">Outside 10 AM–10 PM. Don't trade.</div>
+      </div>
+    </div>
+  `;
+}
+
 function renderManageView() {
   const toolbar = document.getElementById('manageToolbar');
   const body = document.getElementById('manageBody');
@@ -2804,11 +2846,11 @@ function renderManageView() {
   updateManageNavCount();
   
   if (sortedEntries.length === 0) {
-    body.innerHTML = `<div class="empty-journal"><i class="ti ti-list-details" aria-hidden="true"></i>No active trades to manage.<br>Marked and open trades will appear here.</div>`;
+    body.innerHTML = `${sessionAlertHTML()}<div class="empty-journal"><i class="ti ti-list-details" aria-hidden="true"></i>No active trades to manage.<br>Marked and open trades will appear here.</div>`;
     return;
   }
   
-  body.innerHTML = `<div class="entry-list">${sortedEntries.map(manageEntryRowHTML).join('')}</div>`;
+  body.innerHTML = `${sessionAlertHTML()}<div class="entry-list">${sortedEntries.map(manageEntryRowHTML).join('')}</div>`;
   
   body.querySelectorAll('[data-toggle-entry]').forEach(el => {
     el.addEventListener('click', () => {
@@ -2974,8 +3016,10 @@ function getJournalEditConfluence(e) {
   return journalEditConfluence[e.id];
 }
 const chartInstances = {};
+let currentView = 'checklist';
 
 function switchView(view) {
+  currentView = view;
   document.getElementById('tabChecklist').classList.toggle('active', view === 'checklist');
   document.getElementById('tabManage').classList.toggle('active', view === 'manage');
   document.getElementById('tabJournal').classList.toggle('active', view === 'journal');
@@ -4105,6 +4149,22 @@ function updateClock() {
   let pct = ((curMin - startMin) / (endMin - startMin)) * 100;
   pct = Math.max(0, Math.min(100, pct));
   document.getElementById('sessionFill').style.width = pct + '%';
+
+  // Keep the Manage-tab session alert in sync with the clock without disturbing
+  // any in-progress edits — patch the banner in place rather than re-rendering.
+  if (currentView === 'manage') updateManageSessionAlert();
+}
+
+function updateManageSessionAlert() {
+  const body = document.getElementById('manageBody');
+  if (!body) return;
+  const existing = body.querySelector('.session-alert');
+  const shouldShow = isOutsideSession();
+  if (shouldShow && !existing) {
+    body.insertAdjacentHTML('afterbegin', sessionAlertHTML());
+  } else if (!shouldShow && existing) {
+    existing.remove();
+  }
 }
 
 updateClock();
