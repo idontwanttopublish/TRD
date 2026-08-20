@@ -2854,6 +2854,14 @@ function renderManageView() {
     });
   });
   
+  body.querySelectorAll('[data-manage-outcome-select]').forEach(el => {
+    el.addEventListener('change', () => {
+      const hasResult = ['win', 'loss', 'breakeven'].includes(el.value);
+      const fieldsWrap = el.parentElement.querySelector('[data-manage-outcome-fields]');
+      if (fieldsWrap) fieldsWrap.style.display = hasResult ? 'contents' : 'none';
+    });
+  });
+  
   body.querySelectorAll('[data-cf-group]').forEach(el => {
     el.addEventListener('click', () => {
       const container = el.closest('.editable-confluence');
@@ -3743,8 +3751,8 @@ function tradeSuggestionHTML(e) {
 
 // Lightweight summary detail used only on the Manage page — overall bias
 // instead of the full direction breakdown, plus the execution suggestion.
-// Manage-only Trade details block: Symbol and Profit target always show;
-// Entry price and Stop loss stay hidden until the trade isn't just "Marked"
+// Manage-only Trade details block: Symbol always shows; Entry price, Stop
+// loss, and Profit target stay hidden until the trade isn't just "Marked"
 // (status is Open or Closed) — toggled live by the status chip handler.
 function buildManageTradeEditHTML(e, locked) {
   const showEntryStop = e.status !== 'marked';
@@ -3759,12 +3767,12 @@ function buildManageTradeEditHTML(e, locked) {
     ${e.trade.notes ? `<div class="field-note" style="margin-top:8px;">${e.trade.notes}</div>` : ''}
   ` : `
     <div class="form-grid">
-      <input class="form-input" placeholder="Symbol / pair" data-tfield="symbol" value="${e.trade.symbol || ''}">
-      <input class="form-input span-2" type="number" step="any" placeholder="Profit target" data-tfield="takeProfit" value="${e.trade.takeProfit ?? ''}">
+      <input class="form-input span-2" placeholder="Symbol / pair" data-tfield="symbol" value="${e.trade.symbol || ''}">
     </div>
     <div class="form-grid" data-manage-entrystop style="${showEntryStop ? '' : 'display:none;'}">
       <input class="form-input" type="number" step="any" placeholder="Entry price" data-tfield="entryPrice" value="${e.trade.entryPrice ?? ''}">
       <input class="form-input" type="number" step="any" placeholder="Stop loss" data-tfield="stopLoss" value="${e.trade.stopLoss ?? ''}">
+      <input class="form-input span-2" type="number" step="any" placeholder="Profit target" data-tfield="takeProfit" value="${e.trade.takeProfit ?? ''}">
     </div>
     <textarea class="form-input" rows="2" placeholder="Notes (optional)" data-tfield="notes">${e.trade.notes || ''}</textarea>
   `;
@@ -3772,8 +3780,11 @@ function buildManageTradeEditHTML(e, locked) {
 
 // Manage-only Outcome block: no pre-selected "Marked/Open" placeholder value
 // — the select always opens on a real, unselectable "Select result…" option.
+// Exit price / P&L / notes stay hidden until a real result (win/loss/breakeven)
+// is picked — toggled live by the outcome-status select's change handler.
 function buildManageOutcomeEditHTML(e, locked) {
   const o = e.outcome || {};
+  const hasResult = ['win', 'loss', 'breakeven'].includes(o.status);
   return locked ? `
     <div class="kv-grid">
       <div class="kv-row"><span>Result</span><span>${o.status || '—'}</span></div>
@@ -3783,15 +3794,17 @@ function buildManageOutcomeEditHTML(e, locked) {
     ${o.notes ? `<div class="field-note" style="margin-top:8px;">${o.notes}</div>` : ''}
   ` : `
     <div class="outcome-form">
-      <select class="form-input" data-outcome-field="status" data-id="${e.id}">
-        <option value="" ${!['win', 'loss', 'breakeven'].includes(o.status) ? 'selected' : ''} disabled>Select result…</option>
+      <select class="form-input" data-outcome-field="status" data-id="${e.id}" data-manage-outcome-select>
+        <option value="" ${!hasResult ? 'selected' : ''} disabled>Select result…</option>
         <option value="win" ${o.status === 'win' ? 'selected' : ''}>Win</option>
         <option value="loss" ${o.status === 'loss' ? 'selected' : ''}>Loss</option>
         <option value="breakeven" ${o.status === 'breakeven' ? 'selected' : ''}>Breakeven</option>
       </select>
-      <input class="form-input" type="number" step="any" placeholder="Exit price" data-outcome-field="exitPrice" data-id="${e.id}" value="${o.exitPrice ?? ''}">
-      <input class="form-input span-2" type="number" step="any" placeholder="P/L amount" data-outcome-field="pnl" data-id="${e.id}" value="${o.pnl ?? ''}">
-      <textarea class="form-input span-2" rows="2" placeholder="Outcome notes" data-outcome-field="notes" data-id="${e.id}">${o.notes || ''}</textarea>
+      <div data-manage-outcome-fields style="${hasResult ? 'display:contents;' : 'display:none;'}">
+        <input class="form-input" type="number" step="any" placeholder="Exit price" data-outcome-field="exitPrice" data-id="${e.id}" value="${o.exitPrice ?? ''}">
+        <input class="form-input span-2" type="number" step="any" placeholder="P/L amount" data-outcome-field="pnl" data-id="${e.id}" value="${o.pnl ?? ''}">
+        <textarea class="form-input span-2" rows="2" placeholder="Outcome notes" data-outcome-field="notes" data-id="${e.id}">${o.notes || ''}</textarea>
+      </div>
       ${e.status === 'closed' ? `<div class="field-note" style="margin-top:2px;">Pick Win, Loss, or Breakeven before saving a closed trade.</div>` : ''}
     </div>
   `;
