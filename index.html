@@ -3024,7 +3024,15 @@ function renderManageView() {
 /* =====================================================
    JOURNAL DASHBOARD — filters, stats, charts, entry list
    ===================================================== */
-let journalFilters = { range: 'all', setup: 'all', side: 'all', outcome: 'all' };
+let journalFilters = { range: 'all', setup: 'all', side: 'all', outcome: 'all', timeframe: 'all' };
+const JOURNAL_TF_OPTIONS = ["M1", "M5", "M15", "M30", "H1", "H4", "D1"];
+
+// Timeframe recorded on a journal entry — pulled from its setup fields
+// (same lookup used by setupTFKey), falls back to null when not recorded.
+function entryTimeframe(e) {
+  const tfField = (e.setupFields || []).find(f => /timeframe/i.test(f.label));
+  return (tfField && tfField.value) ? tfField.value : null;
+}
 let expandedEntryId = null;
 let journalEditConfluence = {};
 let manageConfluenceExpanded = {};
@@ -3078,6 +3086,7 @@ function filteredEntries() {
     if (journalFilters.setup !== 'all' && e.setupType !== journalFilters.setup) return false;
     if (journalFilters.side !== 'all' && e.side !== journalFilters.side) return false;
     if (journalFilters.outcome !== 'all' && (!e.outcome || e.outcome.status !== journalFilters.outcome)) return false;
+    if (journalFilters.timeframe !== 'all' && entryTimeframe(e) !== journalFilters.timeframe) return false;
     return true;
   });
 }
@@ -3180,6 +3189,10 @@ function renderJournalToolbar() {
       <option value="loss" ${journalFilters.outcome === 'loss' ? 'selected' : ''}>Loss</option>
       <option value="breakeven" ${journalFilters.outcome === 'breakeven' ? 'selected' : ''}>Breakeven</option>
     </select>
+    <select class="jt-select" id="fTF">
+      <option value="all" ${journalFilters.timeframe === 'all' ? 'selected' : ''}>All timeframes</option>
+      ${JOURNAL_TF_OPTIONS.map(tf => `<option value="${tf}" ${journalFilters.timeframe === tf ? 'selected' : ''}>${tf}</option>`).join('')}
+    </select>
     <button class="jt-btn" id="btnExport"><i class="ti ti-download" aria-hidden="true"></i> Export JSON</button>
     <button class="jt-btn" id="btnImport"><i class="ti ti-upload" aria-hidden="true"></i> Import</button>
     <input type="file" id="fileImport" accept="application/json" style="display:none;">
@@ -3190,6 +3203,7 @@ function renderJournalToolbar() {
   document.getElementById('fSetup').addEventListener('change', e => { journalFilters.setup = e.target.value; renderJournalDashboard(); });
   document.getElementById('fSide').addEventListener('change', e => { journalFilters.side = e.target.value; renderJournalDashboard(); });
   document.getElementById('fOutcome').addEventListener('change', e => { journalFilters.outcome = e.target.value; renderJournalDashboard(); });
+  document.getElementById('fTF').addEventListener('change', e => { journalFilters.timeframe = e.target.value; renderJournalDashboard(); });
 
   document.getElementById('btnExport').addEventListener('click', () => {
     const data = JSON.stringify(getJournal(), null, 2);
